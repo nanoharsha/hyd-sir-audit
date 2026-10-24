@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Okhla AC 54 SIR Dashboard</title>
+<style>
+:root{--bg:#f6f5f1;--surface:#fff;--alt:#f1efe9;--ink:#1c1c1c;--muted:#6b6b66;--rule:#d9d6cc;--navy:#243b55;--warn:#d98e04;--danger:#b3261e;--ok:#2e7d4f;--grey:#555}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--surface:#202020;--alt:#262626;--ink:#eee;--muted:#a3a3a0;--rule:#3a3a3a;--navy:#8fb0d8;--warn:#f0b445;--danger:#ff8a80;--ok:#6fcf97;--grey:#aaa}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 2px}.sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.chip,select,input{font:inherit;padding:7px 12px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:6px}
+.chip{cursor:pointer}.chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}@media(prefers-color-scheme:dark){.chip.on{color:#111}}
+.scope{font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0}
+.heads{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+.head{background:var(--alt);border:1px solid var(--navy);border-top:4px solid var(--navy);padding:14px 16px}
+.big{display:block;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05}
+.head .big{font-size:34px;color:var(--navy)}.head .lbl{display:block;font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin-top:8px}
+.head .s{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.tile{background:var(--surface);border:1px solid var(--rule);border-top:4px solid var(--muted);padding:12px 14px}
+.tile .big{font-size:26px}.tile .lbl{display:block;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+.tile .pc{font-size:12px;color:var(--muted);margin-top:2px}
+.tile.NOTICE{border-top-color:var(--warn)}.tile.ASDD{border-top-color:var(--danger)}.tile.DELETED{border-top-color:var(--grey)}.tile.CLEARED{border-top-color:var(--ok)}.tile.NO_SIR{border-top-color:var(--navy)}
+h2{font-size:16px;margin:26px 0 6px}.note{color:var(--muted);font-size:13px;margin:0 0 10px;max-width:90ch}
+.tw{overflow:auto;border:1px solid var(--rule);background:var(--surface);max-height:70vh}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 9px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:var(--navy);color:#fff;cursor:pointer;font-size:12px;z-index:1}@media(prefers-color-scheme:dark){th{color:#111}}
+td:first-child,th:first-child,td.l,th.l{text-align:left}td.l{white-space:normal;min-width:180px;max-width:300px}
+tr.crit td{background:rgba(217,142,4,.14)}tr.audit td:first-child{box-shadow:inset 3px 0 var(--navy)}
+td small{color:var(--muted)}
+.foot{margin-top:28px;color:var(--muted);font-size:12px}
+</style></head><body><div class="wrap">
+<h1>Okhla (AC 54) — SIR 2026 dashboard</h1>
+<p class="sub" id="sub"></p>
+<div class="bar">
+  <button class="chip on" id="bAll" onclick="setScope('all')">Entire Okhla</button>
+  <button class="chip" id="bAud" onclick="setScope('audit')">Parts 59–69 (field audit)</button>
+  <button class="chip" id="bFoc" onclick="setScope('focus')">Parts 61 &amp; 65 only</button>
+  <select id="pick" onchange="setScope('part',this.value)" aria-label="Choose an old part"></select>
+</div>
+<div class="scope" id="scope"></div>
+<div class="heads" id="heads"></div>
+<div class="tiles" id="tiles"></div>
+<p class="note" id="una"></p>
+
+<h2>By old part (2025 booth)</h2>
+<p class="note">Same measures as the app. Critical = ASDD + Not in SIR as a share of the base roll AND Notices as a share of the draft are both above the Okhla-wide average (shaded). Blue edge = field-audit parts 59–69. Click a heading to sort.</p>
+<div class="bar"><input id="flt" placeholder="Filter by part number or area…" oninput="drawOld()" style="min-width:260px"></div>
+<div class="tw"><table id="tOld"></table></div>
+
+<div id="newWrap"><h2>By new part (2026 booth)</h2>
+<p class="note">Electors placed in each of the 345 booths of the Sept-2026 draft roll. Part numbers here are the NEW numbers. A new part for someone who is not on the draft (ASDD, deleted) is the booth printed on the list or estimated.</p>
+<div class="tw"><table id="tNew"></table></div></div>
+
+<p class="foot" id="foot"></p>
+</div>
+<script>
+const D=/*DATA*/null;
+const ST=[["NOTICE","Notice"],["ASDD","ASDD"],["DELETED","Pre-SIR deletion"],["CLEARED","SIR Cleared"],["NO_SIR","Not in SIR"]];
+const f=n=>Number(n||0).toLocaleString("en-IN"),pc=(a,b)=>b?(100*a/b).toFixed(1)+"%":"–";
+let scope="all",part=0,sortOld={k:"p",d:1},sortNew={k:"p",d:1};
+const base=p=>(p.roll||0)+(p.added||0)-(p.deleted||0);
+const sel=()=>D.parts.filter(p=>scope==="all"||(scope==="audit"&&p.p>=59&&p.p<=69)||(scope==="focus"&&(p.p===61||p.p===65))||(scope==="part"&&p.p===part));
+function sum(rows){const z={roll:0,added:0,deleted:0,draft:0,dadd:0,s:{}};rows.forEach(p=>{z.roll+=p.roll||0;z.added+=p.added||0;z.deleted+=p.deleted||0;z.draft+=p.draft||0;z.dadd+=p.draft_added||0;for(const k in p.s||{})z.s[k]=(z.s[k]||0)+p.s[k]});z.base=z.roll+z.added-z.deleted;return z}
+// critical = both averages exceeded, over the WHOLE constituency (the app's rule, pooled across all parts)
+const T=sum(D.parts),avgAB=((T.s.ASDD||0)+(T.s.NO_SIR||0))/T.base,avgN=(T.s.NOTICE||0)/T.draft;
+const ab=p=>((p.s||{}).ASDD||0)+((p.s||{}).NO_SIR||0);
+const crit=p=>base(p)>0&&p.draft>0&&ab(p)/base(p)>avgAB&&((p.s||{}).NOTICE||0)/p.draft>avgN;
+function setScope(s,v){scope=s;part=+v||0;document.getElementById("bAll").classList.toggle("on",s==="all");document.getElementById("bAud").classList.toggle("on",s==="audit");document.getElementById("bFoc").classList.toggle("on",s==="focus");if(s!=="part")document.getElementById("pick").value="0";draw();drawOld();drawNew()}
+function draw(){
+  const rows=sel(),z=sum(rows);
+  document.getElementById("scope").textContent=scope==="all"?"Entire Okhla — all "+D.parts.length+" old parts":scope==="audit"?"Field-audit parts 59–69":scope==="focus"?"Old parts 61 and 65 only (Batla House field work)":"Old part "+part+" — "+(rows[0]?rows[0].loc.split(" | ")[0]:"");
+  document.getElementById("heads").innerHTML=
+   `<div class="head"><span class="big">${f(z.base)}</span><span class="lbl">Base roll total (2025 roll + monthly changes)</span><span class="s">${f(z.roll)} in the 2025 roll + ${f(z.added)} added − ${f(z.deleted)} deleted in the monthly lists</span></div>`+
+   `<div class="head"><span class="big">${f(z.draft)}</span><span class="lbl">Included in the Draft SIR 2026</span><span class="s">${f(z.draft-z.dadd)} from the 2025 roll + ${f(z.dadd)} added since</span></div>`;
+  document.getElementById("tiles").innerHTML=ST.map(([k,l])=>{const n=z.s[k]||0;const den=(k==="NOTICE")?z.draft:z.base;
+    return `<div class="tile ${k}"><span class="big">${f(n)}</span><span class="lbl">${l}</span><span class="pc">${pc(n,den)} of ${k==="NOTICE"?"draft":"base roll"}</span></div>`}).join("");
+  const u=D.unassigned||{},un=Object.values(u).reduce((a,b)=>a+b,0);
+  document.getElementById("una").textContent=(scope==="all"&&un)?"Not counted above: "+f(un)+" electors on the draft with no old part on record ("+ST.filter(([k])=>u[k]).map(([k,l])=>f(u[k])+" "+l).join(", ")+") — they were added since Jan 2025 or appear only on a SIR list. Including them, the draft holds "+f(z.draft+(u.NOTICE||0)+(u.CLEARED||0))+" electors.":"";
+}
+function table(el,cols,rows,sortState,redraw){
+  const s=sortState;rows=[...rows].sort((a,b)=>{const x=cols.find(c=>c.k===s.k).v(a),y=cols.find(c=>c.k===s.k).v(b);return (x>y?1:x<y?-1:0)*s.d});
+  el.innerHTML="<thead><tr>"+cols.map(c=>`<th class="${c.l?"l":""}" onclick="${redraw}('${c.k}')">${c.h}${s.k===c.k?(s.d>0?" ▲":" ▼"):""}</th>`).join("")+"</tr></thead><tbody>"+rows.map(r=>`<tr class="${r._c||""}">`+cols.map(c=>`<td class="${c.l?"l":""}">${c.f(r)}</td>`).join("")+"</tr>").join("")+"</tbody>";
+}
+const cell=(n,d)=>`${f(n)} <small>${pc(n,d)}</small>`;
+function drawOld(){
+  const q=(document.getElementById("flt").value||"").toLowerCase();
+  const rows=D.parts.filter(p=>(scope!=="focus"||p.p===61||p.p===65)&&(!q||String(p.p)===q||(p.label+" "+p.loc).toLowerCase().includes(q))).map(p=>Object.assign({},p,{_c:(crit(p)?"crit ":"")+(p.p>=59&&p.p<=69?"audit":"")}));
+  const S=(p,k)=>(p.s||{})[k]||0;
+  table(document.getElementById("tOld"),[
+   {k:"p",h:"Part",v:p=>p.p,f:p=>(crit(p)?"⚠ ":"")+p.p},
+   {k:"loc",h:"Area",l:1,v:p=>p.loc,f:p=>(p.loc||"").split(" | ")[0]+((p.loc||"").split(" | ").length>1?" +"+((p.loc||"").split(" | ").length-1):"")},
+   {k:"np",h:"New parts",l:1,v:p=>p.np,f:p=>p.np||""},
+   {k:"base",h:"Base roll",v:p=>base(p),f:p=>f(base(p))},
+   {k:"draft",h:"Draft SIR",v:p=>p.draft,f:p=>f(p.draft)},
+   {k:"asdd",h:"ASDD (% base)",v:p=>S(p,"ASDD"),f:p=>cell(S(p,"ASDD"),base(p))},
+   {k:"nosir",h:"Not in SIR (% base)",v:p=>S(p,"NO_SIR"),f:p=>cell(S(p,"NO_SIR"),base(p))},
+   {k:"not",h:"Notice (% draft)",v:p=>S(p,"NOTICE"),f:p=>cell(S(p,"NOTICE"),p.draft)},
+   {k:"del",h:"Pre-SIR deletion",v:p=>S(p,"DELETED"),f:p=>f(S(p,"DELETED"))},
+   {k:"clr",h:"SIR Cleared",v:p=>S(p,"CLEARED"),f:p=>f(S(p,"CLEARED"))},
+  ],rows,sortOld,"sortO");
+}
+function sortO(k){sortOld=sortOld.k===k?{k,d:-sortOld.d}:{k,d:k==="p"||k==="loc"||k==="np"?1:-1};drawOld()}
+function drawNew(){
+  document.getElementById("newWrap").style.display=scope==="focus"?"none":"";
+  const S=(p,k)=>(p.s||{})[k]||0,tot=p=>ST.reduce((a,[k])=>a+S(p,k),0);
+  table(document.getElementById("tNew"),[
+   {k:"p",h:"New part",v:p=>p.p,f:p=>p.p},
+   {k:"n",h:"Electors placed",v:p=>tot(p),f:p=>f(tot(p))},
+   ...ST.map(([k,l])=>({k,h:l,v:p=>S(p,k),f:p=>f(S(p,k))})),
+  ],D.newparts,sortNew,"sortN");
+}
+function sortN(k){sortNew=sortNew.k===k?{k,d:-sortNew.d}:{k,d:k==="p"?1:-1};drawNew()}
+document.getElementById("pick").innerHTML='<option value="0">Choose one part…</option>'+D.parts.map(p=>`<option value="${p.p}">${p.p} · ${(p.loc||"").split(" | ")[0]}</option>`).join("");
+document.getElementById("sub").textContent="Counts only — no names or voter IDs. Data: "+D.source+". Built "+D.built.slice(0,10)+"; page made "+D.generated+".";
+document.getElementById("foot").innerHTML="Tags: <b>Notice</b> (on the draft, notice issued), <b>ASDD</b> (absent / shifted / dead / duplicate list), <b>Pre-SIR deletion</b> (struck off in the Jan-2025 roll or deleted in a monthly list Feb 2025 – Jun 2026, and not on a later list), <b>SIR Cleared</b> (on the draft, no notice), <b>Not in SIR</b> (on no list and not deleted). Latest record wins. Okhla-wide averages used for ‘critical’: ASDD + Not in SIR = "+(100*avgAB).toFixed(1)+"% of base roll; Notice = "+(100*avgN).toFixed(1)+"% of draft.";
+draw();drawOld();drawNew();
+</script></body></html>

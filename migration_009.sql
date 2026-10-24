@@ -1,0 +1,19 @@
+-- Supplement 5 (ECI, Mangol Puri AC) — additions / deletions / corrections the
+-- owner identified as missed from the base roll. One tag column, three values:
+--   'Addition'   -> "Addition in Supplement 5"
+--   'Deletion'   -> "Deleted in Supplement 5"  (also sets source_deleted='Yes')
+--   'Correction' -> "Corrections in Supplement 5" (corrected name/relation/house
+--                    applied to the row; previous values kept verbatim in notes)
+--
+-- Deletions tagged here are NOT subtracted from Base Roll Total — same as
+-- source_deleted / source_unidentified_deletion. Each proposed deletion is
+-- field-verified individually (several are already confirmed present), so it
+-- is surfaced as a badge + dashboard tile + drill-down, not applied. Supplement
+-- 5 additions are inserted as added_in_field = 0 base-roll rows so they count.
+--
+-- Provenance for every touched row is in electors.notes (a " | Supplement 5:
+-- ..." line, previous values kept verbatim for corrections) plus
+-- updated_by_email / updated_at = 'supplement5-import@system'. No
+-- status_history rows are written: nothing here changes a verification
+-- outcome, and the earlier roll-update import tagged the same way.
+ALTER TABLE electors ADD COLUMN supplement5 TEXT;

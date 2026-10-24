@@ -1,0 +1,18 @@
+{
+  "name": "SIR Social Audit",
+  "short_name": "SIR Audit",
+  "description": "Door-to-door electoral roll verification for the SIR social audit in Secunderabad Cantt (AC 71), Hyderabad.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf9f7",
+  "theme_color": "#1f4e79",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

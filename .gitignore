@@ -1,0 +1,19 @@
+node_modules/
+.wrangler/
+.dev.vars
+.DS_Store
+*.log
+backups/
+backups-local/
+# Never commit voter data: generated imports, rolls, exports
+*.sql.gz
+okhla_import/out/
+okhla_import/*.sql
+trilokpuri_import/out/
+# hyd_import generates the same kinds of thing: SQL for a D1 load, and per-house
+# reports. Those carry addresses and elector counts for real households even when
+# they carry no names, so the scripts are tracked and their output never is.
+hyd_import/out*
+hyd_import/*.sql
+hyd_import/*.csv
+docs/

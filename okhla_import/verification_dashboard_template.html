@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Okhla field verification progress</title>
+<style>
+:root{--bg:#f6f5f1;--surface:#fff;--alt:#f1efe9;--ink:#1c1c1c;--muted:#6b6b66;--rule:#d9d6cc;--navy:#243b55;--warn:#d98e04;--danger:#b3261e;--ok:#2e7d4f;--grey:#555;--bar:#cfd8e3}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--surface:#202020;--alt:#262626;--ink:#eee;--muted:#a3a3a0;--rule:#3a3a3a;--navy:#8fb0d8;--warn:#f0b445;--danger:#ff8a80;--ok:#6fcf97;--grey:#aaa;--bar:#33414f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:28px 0 8px}.sub,.note{color:var(--muted);font-size:13px}.note{margin:0 0 10px;max-width:92ch}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:14px 0 6px}
+.tile{background:var(--surface);border:1px solid var(--rule);border-top:4px solid var(--muted);padding:12px 14px}
+.tile .big{display:block;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .lbl{display:block;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+.tile .s{font-size:12px;color:var(--muted);margin-top:2px}
+.tile.T{border-top-color:var(--navy)}.tile.ASDD{border-top-color:var(--danger)}.tile.NOTICE{border-top-color:var(--warn)}.tile.DELETED{border-top-color:var(--grey)}.tile.G{border-top-color:var(--ok)}
+.prog{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.pcard{background:var(--surface);border:1px solid var(--rule);padding:14px 16px}
+.pcard b{font-size:13px;letter-spacing:.05em;text-transform:uppercase}.pcard .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.track{height:12px;background:var(--bar);border-radius:6px;overflow:hidden;margin:8px 0 4px}.fill{height:100%;background:var(--navy)}
+.tw{overflow:auto;border:1px solid var(--rule);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 10px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap}th{background:var(--navy);color:#fff;font-size:12px}@media(prefers-color-scheme:dark){th{color:#111}}
+td:first-child,th:first-child{text-align:left}td.l,th.l{text-align:left}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.bars .r{display:grid;grid-template-columns:130px 1fr 60px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bars .t{height:14px;background:var(--bar);border-radius:3px;overflow:hidden}.bars .t i{display:block;height:100%;background:var(--navy)}
+.day .r{grid-template-columns:100px 1fr 50px}
+small{color:var(--muted)}
+</style></head><body><div class="wrap">
+<h1>Okhla — field verification progress</h1>
+<p class="sub" id="sub"></p>
+<div class="tiles" id="tiles"></div>
+
+<h2>Progress against the field-audit worklist (parts 59–69)</h2>
+<p class="note">Each bar is visits saved ÷ electors carrying that tag in parts 59–69. A visit counts once per elector, however many times it was edited.</p>
+<div class="prog" id="prog"></div>
+
+<h2>By part</h2>
+<div class="tw"><table id="tPart"></table></div>
+
+<h2>Visits per day</h2>
+<div class="bars day" id="days"></div>
+
+<h2>By volunteer</h2>
+<div class="tw"><table id="tUser"></table></div>
+
+<h2>What the visits are finding</h2>
+<div class="cols" id="find"></div>
+<p class="note" style="margin-top:22px" id="foot"></p>
+</div>
+<script>
+const D=/*DATA*/null;
+const f=n=>Number(n||0).toLocaleString("en-IN"),pc=(a,b)=>b?(100*(a||0)/b).toFixed(1)+"%":"–";
+const F={asdd:"ASDD",notice:"Notice",deleted:"Pre-SIR deletion"},FK={asdd:"ASDD",notice:"NOTICE",deleted:"DELETED"};
+const L={yes:"Yes",no:"No",unable:"Unable to verify",blank:"Not answered",not_generated:"Form not generated",blo_did_not_collect:"Uncollected form found with elector",other:"Other",not_received_from_blo:"Not received from BLO (old option)",completed:"Completed",due:"Due",not_known:"Not known",unaware:"Unaware of which documents",wrongful:"Wrongful deletion",valid:"Valid deletion","":"–"};
+const lab=k=>L[k]||k;
+const T={};D.totals.forEach(t=>T[t.f]=t);const tot=Object.values(T).reduce((a,t)=>a+t.n,0);
+const users=new Set(D.by_user.map(u=>u.who));
+const tgt={},tgtAll={};D.targets.forEach(t=>{tgtAll[t.s]=(tgtAll[t.s]||0)+t.n;if(t.p>=59&&t.p<=69)tgt[t.s]=(tgt[t.s]||0)+t.n});
+const inAudit=Object.keys(FK).reduce((a,k)=>a+D.by_part.filter(r=>r.f===k&&r.p>=59&&r.p<=69).reduce((x,r)=>x+r.n,0),0);
+document.getElementById("sub").textContent="Live from the app's database · "+D.now+" · counts and volunteer names only — no voter names, voter IDs, phone numbers or remarks.";
+document.getElementById("tiles").innerHTML=
+ `<div class="tile T"><span class="big">${f(tot)}</span><span class="lbl">Visits saved</span><span class="s">${f(inAudit)} in parts 59–69</span></div>`+
+ Object.keys(F).map(k=>`<div class="tile ${FK[k]}"><span class="big">${f((T[k]||{}).n)}</span><span class="lbl">${F[k]}</span><span class="s">${pc((T[k]||{}).n,tgt[FK[k]])} of ${f(tgt[FK[k]])} in 59–69</span></div>`).join("")+
+ `<div class="tile G"><span class="big">${f(users.size)}</span><span class="lbl">Volunteers</span><span class="s">have saved a visit</span></div>`+
+ `<div class="tile G"><span class="big">${f(Object.values(T).reduce((a,t)=>a+t.ph,0))}</span><span class="lbl">Phone numbers</span><span class="s">collected</span></div>`+
+ `<div class="tile G"><span class="big">${f(Math.max(0,D.history-tot))}</span><span class="lbl">Edits</span><span class="s">after first save</span></div>`;
+document.getElementById("prog").innerHTML=Object.keys(F).map(k=>{const n=D.by_part.filter(r=>r.f===k&&r.p>=59&&r.p<=69).reduce((a,r)=>a+r.n,0),t=tgt[FK[k]]||0,w=t?Math.max(n/t*100,n?0.8:0):0;
+ return `<div class="pcard"><b>${F[k]}</b><div><span class="n">${f(n)}</span> <small>of ${f(t)} electors</small></div><div class="track"><div class="fill" style="width:${Math.min(w,100)}%"></div></div><small>${pc(n,t)} done · ${f(Math.max(t-n,0))} to go</small></div>`}).join("");
+// by part
+const parts=[...new Set(D.by_part.map(r=>r.p))].sort((a,b)=>a-b);
+const pv=(p,k)=>(D.by_part.find(r=>r.p===p&&r.f===k)||{}).n||0,pt=(p,k)=>(D.targets.find(r=>r.p===p&&r.s===FK[k])||{}).n||0;
+const allP=[...new Set([...Array.from({length:11},(_,i)=>59+i),...parts])].sort((a,b)=>a-b);
+document.getElementById("tPart").innerHTML="<thead><tr><th>Old part</th>"+Object.keys(F).map(k=>`<th>${F[k]} done</th><th>of</th><th>%</th>`).join("")+"<th>Total visits</th></tr></thead><tbody>"+
+ allP.map(p=>`<tr><td>${p}${p<59||p>69?" <small>(outside 59–69)</small>":""}</td>`+Object.keys(F).map(k=>`<td>${f(pv(p,k))}</td><td>${f(pt(p,k))}</td><td>${pc(pv(p,k),pt(p,k))}</td>`).join("")+`<td>${f(Object.keys(F).reduce((a,k)=>a+pv(p,k),0))}</td></tr>`).join("")+"</tbody>";
+// days
+const days=[...new Set(D.by_day.map(r=>r.d))],mx=Math.max(...days.map(d=>D.by_day.filter(r=>r.d===d).reduce((a,r)=>a+r.n,0)),1);
+document.getElementById("days").innerHTML=days.map(d=>{const n=D.by_day.filter(r=>r.d===d).reduce((a,r)=>a+r.n,0);const parts=Object.keys(F).map(k=>{const x=(D.by_day.find(r=>r.d===d&&r.f===k)||{}).n||0;return x?F[k]+" "+x:""}).filter(Boolean).join(" · ");
+ return `<div class="r"><span>${new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}</span><div class="t"><i style="width:${n/mx*100}%"></i></div><b>${n}</b></div><div style="margin:-2px 0 6px 108px"><small>${parts}</small></div>`}).join("")||"<small>No visits yet.</small>";
+// users
+const um={};D.by_user.forEach(u=>{const x=um[u.who]||(um[u.who]={who:u.who,asdd:0,notice:0,deleted:0,first:u.first,last:u.last});x[u.f]=u.n;if(u.first<x.first)x.first=u.first;if(u.last>x.last)x.last=u.last});
+const ul=Object.values(um).map(x=>Object.assign(x,{t:x.asdd+x.notice+x.deleted})).sort((a,b)=>b.t-a.t);
+const tm=s=>s?new Date(s.replace(" ","T")).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+document.getElementById("tUser").innerHTML="<thead><tr><th class='l'>Volunteer</th><th>ASDD</th><th>Notice</th><th>Pre-SIR deletion</th><th>Total</th><th>First visit (IST)</th><th>Latest save (IST)</th></tr></thead><tbody>"+
+ ul.map(x=>`<tr><td class="l">${x.who}</td><td>${x.asdd}</td><td>${x.notice}</td><td>${x.deleted}</td><td><b>${x.t}</b></td><td>${tm(x.first)}</td><td>${tm(x.last)}</td></tr>`).join("")+"</tbody>";
+// findings
+const bars=(title,rows,sub)=>{const t=rows.reduce((a,r)=>a+r[1],0),m=Math.max(...rows.map(r=>r[1]),1);return `<div class="pcard bars"><b>${title}</b>${sub?`<div><small>${sub}</small></div>`:""}${rows.length?rows.map(r=>`<div class="r"><span>${r[0]}</span><div class="t"><i style="width:${r[1]/m*100}%"></i></div><span>${r[1]} <small>${pc(r[1],t)}</small></span></div>`).join(""):"<small>No visits yet.</small>"}</div>`};
+const agg=(rows,key,f2=x=>x)=>{const m={};rows.forEach(r=>{const k=key(r);m[k]=(m[k]||0)+r.n});return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,n])=>[lab(k),n])};
+let h="";
+h+=bars("ASDD — is the marking correct?",agg(D.asdd,r=>r.a),f(T.asdd?T.asdd.n:0)+" ASDD visits");
+const byReason={};D.asdd.forEach(r=>{(byReason[r.reason]=byReason[r.reason]||{})[r.a]=r.n});
+h+=`<div class="pcard"><b>ASDD marking correct, by reason on the list</b><div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">Reason on list</th><th>Yes</th><th>No</th><th>Unable</th><th>Blank</th></tr></thead><tbody>${Object.entries(byReason).map(([r,v])=>`<tr><td class="l">${r}</td><td>${v.yes||0}</td><td>${v.no||0}</td><td>${v.unable||0}</td><td>${v.blank||0}</td></tr>`).join("")||"<tr><td colspan=5>No visits yet.</td></tr>"}</tbody></table></div></div>`;
+h+=bars("ASDD marked wrongly — enumeration form",agg(D.asdd_no,r=>r.enum),"only where the marking was disputed");
+h+=bars("ASDD marked wrongly — Form 6 submitted?",agg(D.asdd_no,r=>r.f6));
+h+=bars("Notice — physical copy received?",agg(D.notice,r=>r.recv));
+h+=bars("Notice — status of hearing",agg(D.notice,r=>r.hearing));
+h+=bars("Notice — documents submitted to the BLO?",agg(D.notice,r=>r.docs));
+h+=bars("Pre-SIR deletion — field status",agg(D.deleted,r=>r.st),f(T.deleted?T.deleted.n:0)+" deletion visits");
+h+=bars("Wrongful deletion — aware of the reason?",agg(D.deleted.filter(r=>r.st==="wrongful"),r=>r.aware||"blank"));
+h+=bars("Wrongful deletion — received the SIR enumeration form?",agg(D.deleted.filter(r=>r.st==="wrongful"),r=>r.got||"blank"));
+document.getElementById("find").innerHTML=h;
+document.getElementById("foot").textContent="Worklist sizes (parts 59–69): "+Object.keys(F).map(k=>F[k]+" "+f(tgt[FK[k]])).join(" · ")+". Across all of Okhla: "+Object.keys(F).map(k=>F[k]+" "+f(tgtAll[FK[k]])).join(" · ")+". Times are Indian Standard Time. Questions are optional, so a visit can have some answers blank (“Not answered”).";
+</script></body></html>
