@@ -57,6 +57,23 @@
 > - **BLO contact maps are empty.** Delhi's BLO names and mobile numbers were
 >   stripped. `bloForPart()` now has a `if (!rec) return null` guard — without it
 >   an empty map crashes on any part in `NEW_TO_OLD_PART`.
+> - **Unsent visits keep their photos in IndexedDB, never localStorage.** localStorage
+>   holds ~5 MB and a form can carry five photos (1.5-3 MB), so the answers stay in
+>   localStorage (a few hundred bytes) and the photos go to the `docs` store of the
+>   `okhlaOffline` database. `lsSet` returns whether it really wrote, and a failed
+>   queue write must leave the form open with a message — it once showed "queued" over
+>   a failed write, which loses a visit with the surveyor believing it is safe.
+> - **Languages: English, Hindi, Telugu.** `t()` falls back to ENGLISH, never to Hindi.
+>   Telugu (`I18N.te` in `app.js`) covers only the strings the visible Secunderabad
+>   screens use (~337); the hidden first-generation tabs have none. It is a
+>   machine-assisted first draft — have a Telugu-speaking surveyor read it. The dead
+>   `okGuide*` strings (a Form 6 guide with an unverified 30 Oct 2026 deadline) are
+>   deliberately untranslated and unreferenced.
+> - **The importer refuses a SIR list filed under the wrong base part**
+>   (`build_hyd.py`: fewer than half its EPICs in the declared part of the roll).
+>   File names carry the 2026 part, one HIGHER than the base part. `Notice_149` is base
+>   part 148 and not ours; the missing list is `Notice_150` (base 149), already
+>   registered in `hyd.config.json` as `notice_150.csv` and skipped until it exists.
 > - **`CRITICAL_MANUAL` is empty** (Delhi pinned part 64).
 > - **No Supplement 5 / Monthly Pooling data.** Those columns stay NULL and their
 >   tiles read zero. The `supplement5` column and code are untouched.

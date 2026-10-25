@@ -253,6 +253,7 @@ export function dashHtml() {
   if (P.dashError) return `<div class="empty">${esc(P.dashError)}</div>`;
   const d = P.dash;
   if (!d) return `<div class="empty">${esc(t("wlLoading"))}</div>`;
+  const locale = () => ({ hi: "hi-IN", te: "te-IN" }[document.documentElement.lang] || "en-IN");
   const fmt = (n) => (n || 0).toLocaleString("en-IN");
   const st = d.by_status || {};
   const known = ["ASDD", "NOTICE", "DELETED", "CLEARED"];
@@ -272,7 +273,7 @@ export function dashHtml() {
     ["phS4", ex.notice_help],
     ["phS5", ex.first_time_form6],
   ];
-  const when = P.dashAt ? P.dashAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "";
+  const when = P.dashAt ? P.dashAt.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : "";
   return `
     <div class="ok-progbar">
       <span class="ok-scope">${esc(t("phDashTitle"))}${when ? " · " + esc(t("phDashAt")) + " " + esc(when) : ""}</span>

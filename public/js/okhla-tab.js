@@ -282,7 +282,7 @@ async function refreshOffline(force) {
 function offlineStripHtml() {
   const info = S.offInfo;
   const isOff = !navigator.onLine;
-  const when = info && info.syncedAt ? new Date(info.syncedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  const when = info && info.syncedAt ? new Date(info.syncedAt).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
   let msg;
   if (S.offSync) msg = rep(t("okOffDownloading"), { i: S.offSync.i, n: S.offSync.n });
   else if (info && info.electors) msg = rep(t("okOffReady"), { n: fmt(info.electors), when });
@@ -345,6 +345,7 @@ function partLabelFor(oldPart) {
 const partInfo = (n) => (S.meta ? S.meta.parts.find((p) => p.old_part === n) : null);
 
 /* ------------------------------------------------------------- rendering */
+const locale = () => ({ hi: "hi-IN", te: "te-IN" }[document.documentElement.lang] || "en-IN");
 const fmt = (n) => (n || 0).toLocaleString("en-IN");
 const rep = (s, o) => Object.entries(o).reduce((a, [k, v]) => a.replace(`{${k}}`, v), s);
 
@@ -1124,7 +1125,7 @@ function progressHtml() {
   const partOpts = `<option value="0">${esc(t("okAllInScope"))}</option>${inScope
     .map((x) => `<option value="${esc(x.key)}"${S.progScope === x.key ? " selected" : ""}>${esc(x.label)}</option>`)
     .join("")}`;
-  const at = S.progAt ? S.progAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "";
+  const at = S.progAt ? S.progAt.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : "";
   return `
     <div class="ok-progbar">
       ${

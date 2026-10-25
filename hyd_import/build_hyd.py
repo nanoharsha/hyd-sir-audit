@@ -149,11 +149,13 @@ def main():
 
     # ---- SIR lists -----------------------------------------------------------
     asdd, notice = {}, {}
+    list_epics = []  # (kind, filename, declared old_part, set of EPICs) — checked against the roll below
     asdd_by_part, notice_by_part = Counter(), Counter()
     for path, old_part, new_part in ASDD_FILES:
         if not os.path.exists(path):
             print(f"  (skipped, not on disk: {os.path.basename(path)})")
             continue
+        seen_epics = set()
         for r in rd(path):
             printed = int_or_none(r.get("old_part"))
             if printed is not None and printed != old_part:
@@ -163,15 +165,21 @@ def main():
             if e:
                 asdd[e] = ((r.get("reason") or "").strip(), new_part, (r.get("s_no") or "").strip())
                 asdd_by_part[old_part] += 1
+                seen_epics.add(e)
+        list_epics.append(("ASD-D", os.path.basename(path), old_part, seen_epics))
     for path, old_part, new_part in NOTICE_FILES:
         if not os.path.exists(path):
             print(f"  (skipped, not on disk: {os.path.basename(path)})")
             continue
+        seen_epics = set()
         for r in rd(path):
             e = epic_norm(r.get("epic_id"))
             if e:
                 notice[e] = ((r.get("reason") or "").strip(), new_part, (r.get("part_serial") or "").strip())
                 notice_by_part[old_part] += 1
+                seen_epics.add(e)
+
+        list_epics.append(("notice", os.path.basename(path), old_part, seen_epics))
 
     # ---- 2026 Draft SIR roll: EPIC -> (new_part, draft_serial) ----------------
     draft = {}
@@ -189,6 +197,34 @@ def main():
     for f in sorted(glob.glob(SRC["roll_glob"])):
         roll += rd(f)
     roll.sort(key=lambda r: (int_or_none(r.get("part_number")) or 0, int_or_none(r.get("index")) or 0))
+
+    # ---- guard against the wrong list under the wrong part -----------------------
+    # Every SIR list is declared against a base part in hyd.config.json, but a file's
+    # NAME is the 2026 part, one higher than the base part it belongs to, and that is
+    # easy to get wrong: Notice_149 (Hasmatpet, base part 148) was nearly loaded as
+    # "the booth 149 list" and would have added 699 electors who live in none of our
+    # houses. A real list for a part has almost all its EPICs in that part of the roll,
+    # so check that, and stop loudly if it does not.
+    epics_by_part = defaultdict(set)
+    for r in roll:
+        e = epic_norm(r.get("epic_id"))
+        if e:
+            epics_by_part[int_or_none(r.get("part_number"))].add(e)
+    for kind, fname, declared, eps in list_epics:
+        if not eps:
+            continue
+        hit = {p: len(eps & s_) for p, s_ in epics_by_part.items()}
+        best = max(hit, key=hit.get) if hit else None
+        share = hit.get(declared, 0) / len(eps)
+        if share < 0.5:
+            sys.exit(
+                f"{fname} ({kind} list) is declared as base part {declared}, but only "
+                f"{share:.0%} of its {len(eps)} EPICs are in that part of the 2025 roll"
+                + (f"; {hit[best]} are in part {best}." if best is not None and hit[best] else
+                   ". None are in any part we hold, so it belongs to a part that has not been loaded.")
+                + " Check the file's part number against hyd.config.json — remember the file name "
+                  "carries the 2026 number, one higher than the base part."
+            )
 
     rows, tokens, reason_rows = [], [], []
     roll_epics = set()

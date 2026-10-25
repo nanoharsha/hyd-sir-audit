@@ -4,7 +4,7 @@
     "Read by the Worker (src/hyd_config.ts) and by the Python importers",
     "(hyd_import/*.py), so the part mapping cannot drift between them.",
     "",
-    "To point this deployment at a different constituency, change this file \u2014",
+    "To point this deployment at a different constituency, change this file —",
     "not the TypeScript or Python. Anything still hardcoded is a bug; say so.",
     "",
     "NOT here, deliberately:",
@@ -44,11 +44,11 @@
       "All part numbers here are BASE-ROLL (old) numbers, because that is what",
       "the register is keyed on. The UI shows both numberings side by side.",
       "",
-      "audit_min/max  \u2014 the parts in scope at all: searchable, with status tiles.",
-      "focus          \u2014 the parts the team is canvassing: the part picker and the",
+      "audit_min/max  — the parts in scope at all: searchable, with status tiles.",
+      "focus          — the parts the team is canvassing: the part picker and the",
       "                 progress dashboard show only these. Widen when a new booth",
       "                 is taken on.",
-      "draft_held     \u2014 base parts whose matching DRAFT roll we have actually",
+      "draft_held     — base parts whose matching DRAFT roll we have actually",
       "                 loaded. A part NOT listed here cannot be checked against",
       "                 the draft, so its electors become CLEARED/assumed rather",
       "                 than counted as removals. Add a part here only once its",
@@ -102,11 +102,22 @@
       {
         "file": "notice_152.csv",
         "old_part": 151
+      },
+      {
+        "file": "notice_150.csv",
+        "old_part": 149
       }
     ],
-    "_excluded": "notice_149.csv is 2026 part 149 = base part 148, which we have not OCR'd; 0 of its 699 EPICs appear in our roll.",
+    "_excluded": "notice_149.csv is 2026 part 149 = base part 148 (Hasmatpet), which we have not OCR'd: all 699 of its EPICs are in the 2026 draft part 149 and none are in our roll. The importer now refuses it if it is declared against a part it does not belong to.",
     "missing_notice_parts": [
       149
+    ],
+    "_next_notice_list": [
+      "THE LIST WE ARE MISSING is the notice list for 2026 part 150 (= base part 149), file name",
+      "Notice_150_71_SecCant.pdf. It is already registered above as notice_150.csv and is skipped until it exists.",
+      "To add it:  1) python3 tool/sir-ocr-macos/parse_asdd_notice.py notice <that pdf> tool/sir-ocr-macos/output/notice_150.csv",
+      "            2) python3 hyd_import/build_hyd.py --sql <out.sql>  and load it   3) remove 149 from missing_notice_parts below.",
+      "Until then, base part 149 electors who were issued a notice show as CLEARED."
     ]
   }
 }

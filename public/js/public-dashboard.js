@@ -121,7 +121,7 @@ let refetchTimer = null;
 let pollTimer = null;
 
 function t(key) {
-  return I18N[lang][key];
+  return (I18N[lang] || I18N.en)[key];
 }
 function num(n) {
   return (n == null ? 0 : n).toLocaleString("en-IN");
@@ -164,7 +164,7 @@ function statCard(path, value, label, def, opts = {}) {
 function render() {
   if (!container || !latest) return;
   const d = latest.totals;
-  const defs = I18N[lang].defs;
+  const defs = (I18N[lang] || I18N.en).defs;
   const today = latest.today;
   const todayTotal = today.verifications + today.additions + today.deletions + today.corrections;
 
@@ -228,7 +228,7 @@ function render() {
 
     <div class="notice"><b>${esc(t("noticeTitle"))}</b><br>${esc(t("notice"))}</div>
     <div class="foot">${esc(t("updated"))}: ${esc(
-      new Date(latest.generated_at).toLocaleString(lang === "hi" ? "hi-IN" : "en-IN")
+      new Date(latest.generated_at).toLocaleString({ hi: "hi-IN", te: "te-IN" }[lang] || "en-IN")
     )}</div>
   `;
 }
