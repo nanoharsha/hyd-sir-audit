@@ -19,6 +19,7 @@ Prints counts and house keys only — never elector names.
 import argparse
 import csv
 import glob
+import json
 import os
 import re
 import sys
@@ -27,8 +28,13 @@ from collections import defaultdict
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "okhla_import"))
 from house_fix import house_id, house_key  # noqa: E402
 
-SRC_DIR = "/home/bond/sir-ocr/tool/sir-ocr-macos/output/csvs"
-OLD_TO_NEW = {149: 150, 150: 151, 151: 152}
+# Shared with the Worker and build_hyd.py — see hyd.config.json.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hyd.config.json"),
+          encoding="utf-8") as _fh:
+    CFG = json.load(_fh)
+SRC_DIR = os.path.join(CFG["import"]["source_dir"], "csvs")
+_OFF = CFG["rolls"]["part_offset"]
+OLD_TO_NEW = {p: p + _OFF for p in range(CFG["parts"]["audit_min"], CFG["parts"]["audit_max"] + 1)}
 
 
 def rd(path):

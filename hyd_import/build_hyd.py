@@ -57,46 +57,41 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "okhla_import"))
 from house_fix import house_id, house_key  # noqa: E402  (canonical house identity, shared with src/okhla_house.ts)
 
-SRC_DIR = "/home/bond/sir-ocr/tool/sir-ocr-macos/output"
+# Constituency settings live in hyd.config.json, shared with the Worker
+# (src/hyd_config.ts) so the part mapping cannot drift between them.
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hyd.config.json")
+with open(CONFIG_PATH, encoding="utf-8") as _fh:
+    CFG = json.load(_fh)
+
+AC = CFG["ac"]
+ROLLS = CFG["rolls"]
+_IMP = CFG["import"]
+
+SRC_DIR = _IMP["source_dir"]
 SRC = {
-    "roll_glob": f"{SRC_DIR}/csvs/2025-*FinalRoll*.csv",
-    "draft_glob": f"{SRC_DIR}/csvs/2026-*DraftRoll*.csv",
-    "mapping": f"{SRC_DIR}/mapping_final.json",
+    "roll_glob": os.path.join(SRC_DIR, _IMP["roll_glob"]),
+    "draft_glob": os.path.join(SRC_DIR, _IMP["draft_glob"]),
+    "mapping": os.path.join(SRC_DIR, _IMP["mapping_json"]),
 }
 
-# The SIR lists, as (path, old_part, new_part). The official PDFs are numbered by
-# the 2026 part; old_part is that minus one. The ASD-D ("uncollectable elector")
-# reports print the old part in every row, which this script asserts on load.
-#
-#   NOT INCLUDED: notice_149.csv is 2026 part 149 = 2025 part 148, a part we have
-#   not OCR'd (its header reads "149 - Hasmatpet", and 0 of its 699 EPICs appear
-#   in our roll), so there is nothing here to attach it to.
-#
-#   STILL MISSING: the notice list for 2026 part 150 = 2025 part 149. Without it,
-#   part 149 electors who were issued a notice come out as CLEARED. Confirmed by
-#   spot-checking an elector that another deployment (holding that list) shows
-#   under NOTICE with "Parent Name Mismatch" while we show them as CLEARED.
-#   Deliberately not naming the EPIC here: this file is shareable, voter data is not.
-ASDD_FILES = [
-    (f"{SRC_DIR}/asdd_149_to_150.csv", 149, 150),
-    (f"{SRC_DIR}/asdd_150_to_151.csv", 150, 151),
-    (f"{SRC_DIR}/asdd_151_to_152.csv", 151, 152),
-]
-NOTICE_FILES = [
-    (f"{SRC_DIR}/notice_151.csv", 150, 151),
-    (f"{SRC_DIR}/notice_152.csv", 151, 152),
-]
-
-# 2025 Final Roll part -> 2026 SIR Draft Roll part. Verified two ways: the
-# polling-station section lists match at this offset, and 484 of the 494
-# part-151 notice EPICs resolve into 2025 part 150.
-OLD_TO_NEW = {149: 150, 150: 151, 151: 152}
-
-# 2025 parts whose 2026 counterpart we actually hold. 2026 p152 was never OCR'd,
-# so 2025 p151 is NOT covered — its electors become CLEARED/assumed, not NO_SIR.
-DRAFT_OLD_PARTS = {149, 150}
-
+# new_part = old_part + offset. See hyd.config.json for how the offset was verified.
+OFFSET = ROLLS["part_offset"]
+AUDIT_MIN, AUDIT_MAX = CFG["parts"]["audit_min"], CFG["parts"]["audit_max"]
+OLD_TO_NEW = {p: p + OFFSET for p in range(AUDIT_MIN, AUDIT_MAX + 1)}
 NEW_TO_OLD = {v: k for k, v in OLD_TO_NEW.items()}
+
+# Base parts whose matching DRAFT roll we actually hold. A part absent here cannot
+# be checked against the draft, so its electors become CLEARED/assumed rather than
+# being counted as removals.
+DRAFT_OLD_PARTS = set(CFG["parts"]["draft_held"])
+
+# (path, old_part, new_part) for each SIR list. The importer asserts the old part
+# printed in each ASD-D row against the old_part declared here.
+ASDD_FILES = [(os.path.join(SRC_DIR, f["file"]), f["old_part"], f["old_part"] + OFFSET)
+              for f in _IMP["asdd_files"]]
+NOTICE_FILES = [(os.path.join(SRC_DIR, f["file"]), f["old_part"], f["old_part"] + OFFSET)
+                for f in _IMP["notice_files"]]
+
 
 STATUS_ORDER = ["NOTICE", "ASDD", "DELETED", "CLEARED", "NO_SIR", "PENDING", "UNLINKED"]
 

@@ -22,26 +22,15 @@ const COLS =
   "name, relation_type, relation_name, age, gender, status, status_detail, deleted_source, deleted_reason, " +
   "deleted_month, conflict, new_part, new_part_src, draft_serial, in_2025_roll, added_month, name_partial, source, draft_basis, alt_epic_norm, block";
 
-// The field audit covers 2025 Final Roll parts 149-151 (Secunderabad Cantt,
-// AC 71): they are the part picker and the dashboard numbers. Every other part
-// stays fully searchable (EPIC, name, house number) and carries the same tags —
-// it just has no picker entry or tile. Delhi's Okhla range was 59-69.
-export const AUDIT_MIN = 149;
-export const AUDIT_MAX = 151;
+// The audited part range, the parts the team is canvassing, and the manually
+// pinned "critical" parts all come from hyd.config.json. Change that file, not
+// this one; see its notes for what each setting means.
+import { AUDIT_MIN, AUDIT_MAX, CRITICAL_MANUAL, FOCUS_PARTS } from "./hyd_config";
+export { AUDIT_MIN, AUDIT_MAX, FOCUS_PARTS };
+
+// Parts outside the range stay fully searchable (EPIC, name, house number) and
+// carry the same tags — they just get no picker entry or status tile.
 const IN_AUDIT = `old_part BETWEEN ${AUDIT_MIN} AND ${AUDIT_MAX}`;
-
-// Parts always shown as critical regardless of the rule below. Empty for
-// Secunderabad — Delhi pinned part 64 by owner decision; there is no equivalent
-// here until the team nominates one.
-const CRITICAL_MANUAL: number[] = [];
-
-// The parts the team is actually canvassing, in 2025 Final Roll numbering
-// (owner decision, 2026-10-23): 2025 part 149 = 2026 booth 150 is the priority,
-// then 2025 part 150 = 2026 booth 151. 2025 part 151 (2026 booth 152) is NOT an
-// area of interest, so it is kept out of the part picker — but it stays fully
-// searchable under "All parts", so a house encountered on the ground still
-// resolves. Widen this list when the team takes on another booth.
-export const FOCUS_PARTS = [149, 150];
 
 const HH_ORDER = "ORDER BY p, s, n";
 const PAGE_SIZE = 25;

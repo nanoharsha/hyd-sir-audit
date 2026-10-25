@@ -25,13 +25,31 @@
 > `npx wrangler d1 export hyd-sir-audit-db --remote --output backups/<name>.sql`.
 > Running the Delhi version would touch another organisation's production.
 >
+> ### Constituency settings live in ONE file
+>
+> **`hyd.config.json`** is the single source of truth for everything specific to
+> this constituency: AC identity, the part offset, the audited range, the focus
+> parts, which draft rolls are actually held, and the importer's input files.
+> It is read by the Worker (`src/hyd_config.ts`) and by both Python importers,
+> so the part mapping cannot drift between them. The old->new part map and the
+> dashboard's booth labels are *derived* from `part_offset`, not restated.
+>
+> Change that file, not the TypeScript or Python. Anything still hardcoded that
+> should be in there is a bug. Two deliberate exceptions: `SUPER_ADMIN_EMAILS`
+> stays a deploy-time env var in `wrangler.jsonc` so a data-file mistake can
+> never lock out every admin, and Cloudflare resource names/ids stay there too.
+>
 > ### What is Hyderabad-specific in the code
 >
 > - **Part offset is −1, not Delhi's +3.** 2025 Final Roll part N is 2026 SIR
->   Draft Roll part N+1 (149→150, 150→151, 151→152). In
->   `src/comprehensive_search.ts` and `public/js/search-all.js` — both copies,
->   change together.
-> - **`AUDIT_MIN`/`AUDIT_MAX` in `src/okhla.ts` are 149/151** (Delhi: 59/69).
+>   Draft Roll part N+1 (149→150, 150→151, 151→152). Set once as `part_offset`
+>   in `hyd.config.json`; everything else derives from it.
+> - **Audited range and focus parts** are `parts.audit_min`/`audit_max` and
+>   `parts.focus` in that config (Delhi's Okhla range was 59-69).
+> - `src/comprehensive_search.ts` and `public/js/search-all.js` keep their own
+>   old/new part maps. They serve the FIRST-generation tabs, whose tables are
+>   empty and whose area is hidden here, so they are dormant and deliberately
+>   NOT wired to the config. Wire them up or delete them if that area returns.
 > - **`ok_*` tables and `okhla*.ts` modules keep their Okhla names** even though
 >   they hold Secunderabad data. Renaming would touch ~3,000 lines across 10
 >   files, and a missed reference is a silent runtime bug. Read `ok_` as "the

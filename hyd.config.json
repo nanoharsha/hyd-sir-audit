@@ -1,0 +1,112 @@
+{
+  "_readme": [
+    "Single source of truth for everything that is specific to THIS constituency.",
+    "Read by the Worker (src/hyd_config.ts) and by the Python importers",
+    "(hyd_import/*.py), so the part mapping cannot drift between them.",
+    "",
+    "To point this deployment at a different constituency, change this file \u2014",
+    "not the TypeScript or Python. Anything still hardcoded is a bug; say so.",
+    "",
+    "NOT here, deliberately:",
+    "  - SUPER_ADMIN_EMAILS lives in wrangler.jsonc. It is a deploy-time env var",
+    "    on purpose, so a mistake in a data file can never lock out every admin.",
+    "  - Cloudflare resource names and ids also live in wrangler.jsonc.",
+    "  - src/comprehensive_search.ts and public/js/search-all.js carry their own",
+    "    old/new part maps. Those serve the FIRST-generation tabs, which read the",
+    "    electors/asddo/draft_sir tables and are empty and hidden in this",
+    "    deployment. They are dormant here and deliberately not wired to this",
+    "    file; if you ever un-hide that area, wire them up or delete them."
+  ],
+  "ac": {
+    "number": 71,
+    "name": "Secunderabad Cantt (SC)",
+    "short_name": "Secunderabad Cantt",
+    "district": "Hyderabad",
+    "eci_state_code": "S29"
+  },
+  "rolls": {
+    "base_year": 2025,
+    "base_label": "2025 Final Roll (Revision 1)",
+    "draft_year": 2026,
+    "draft_label": "2026 SIR Draft Roll",
+    "_part_offset": [
+      "new_part = old_part + part_offset.",
+      "Secunderabad is +1: the 2026 draft inserted a new part 148 at the front,",
+      "shifting every later part up by one. Verified from the polling-station",
+      "section lists, and independently by EPIC overlap (484 of the 494",
+      "part-151 notice EPICs resolve into 2025 part 150).",
+      "Delhi's Okhla was +3. Do not copy a number between constituencies."
+    ],
+    "part_offset": 1
+  },
+  "parts": {
+    "_note": [
+      "All part numbers here are BASE-ROLL (old) numbers, because that is what",
+      "the register is keyed on. The UI shows both numberings side by side.",
+      "",
+      "audit_min/max  \u2014 the parts in scope at all: searchable, with status tiles.",
+      "focus          \u2014 the parts the team is canvassing: the part picker and the",
+      "                 progress dashboard show only these. Widen when a new booth",
+      "                 is taken on.",
+      "draft_held     \u2014 base parts whose matching DRAFT roll we have actually",
+      "                 loaded. A part NOT listed here cannot be checked against",
+      "                 the draft, so its electors become CLEARED/assumed rather",
+      "                 than counted as removals. Add a part here only once its",
+      "                 draft roll is really imported."
+    ],
+    "audit_min": 149,
+    "audit_max": 151,
+    "focus": [
+      149,
+      150
+    ],
+    "draft_held": [
+      149,
+      150
+    ],
+    "_critical_manual": "Parts pinned as critical regardless of the rule. Empty here; Delhi pinned one by hand.",
+    "critical_manual": []
+  },
+  "import": {
+    "_note": [
+      "Paths are on the machine that runs the importers; they hold voter PII and",
+      "are never committed. Each SIR list names the BASE part it belongs to, and",
+      "the importer asserts that against the old part printed in the file.",
+      "",
+      "missing_notice_parts records base parts we hold NO notice list for, so the",
+      "app can say so rather than silently reporting those electors as cleared."
+    ],
+    "source_dir": "/home/bond/sir-ocr/tool/sir-ocr-macos/output",
+    "roll_glob": "csvs/2025-*FinalRoll*.csv",
+    "draft_glob": "csvs/2026-*DraftRoll*.csv",
+    "mapping_json": "mapping_final.json",
+    "asdd_files": [
+      {
+        "file": "asdd_149_to_150.csv",
+        "old_part": 149
+      },
+      {
+        "file": "asdd_150_to_151.csv",
+        "old_part": 150
+      },
+      {
+        "file": "asdd_151_to_152.csv",
+        "old_part": 151
+      }
+    ],
+    "notice_files": [
+      {
+        "file": "notice_151.csv",
+        "old_part": 150
+      },
+      {
+        "file": "notice_152.csv",
+        "old_part": 151
+      }
+    ],
+    "_excluded": "notice_149.csv is 2026 part 149 = base part 148, which we have not OCR'd; 0 of its 699 EPICs appear in our roll.",
+    "missing_notice_parts": [
+      149
+    ]
+  }
+}

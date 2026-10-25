@@ -1,31 +1,27 @@
-// Okhla field-verification PROGRESS: how much of the audit worklist (parts 59-69, electors tagged ASDD / Notice /
+// Field-verification PROGRESS: how much of the audit worklist (the focus parts in hyd.config.json,
 // Deleted) has a saved visit, house by house and elector by elector, and what the visits found.
 // Every figure on the dashboard has a `kind` here that returns the matching list (okhlaList), shown as household cards.
 
 import { membersOf, groupHouseholds } from "./okhla";
 import { attachVerifications } from "./okhla_verify";
+import { FOCUS_PARTS, partLabel } from "./hyd_config";
 
 const PAGE = 25;
-// The dashboard covers only what the field team has started: a whole part, or one block of a part.
-// Add an entry here when a new part / block begins. `key` is what the screen sends back to pick one.
-// Secunderabad Cantt. `part` filters on old_part (the 2025 Final Roll numbering),
-// but a surveyor in the field is holding 2026 paperwork and an elector card shows
-// "New part 150" for an old_part-149 person — so every label here names BOTH
-// numbers. Never label one of these with a bare number: 150 means the 2026 booth
-// to a surveyor and the 2025 part to this query, and they are different places.
-// `block` is null throughout: these house numbers are not block-lettered the way
-// Okhla's K-78 / G-10 are, so there is nothing to split a part by.
-// Delhi's entries here were part 65 and parts 61 block G / F.
+// The dashboard covers only what the field team has started. Built from the focus
+// parts in hyd.config.json, so taking on another booth is a config change rather
+// than an edit here. A part outside the focus list stays fully searchable and
+// keeps its status tiles (AUDIT_MIN/MAX in okhla.ts) — it just has no fieldwork row.
 //
-// Scoped to the two booths the team is actually working (owner decision,
-// 2026-10-23): 2026 booth 150 first, then 151. 2026 booth 152 (2025 part 151) is
-// deliberately absent — it stays fully searchable and keeps its status tiles via
-// AUDIT_MIN/MAX in okhla.ts, it just has no fieldwork row here yet. Add it back
-// as one line when the team starts on it.
-export const PROGRESS_SCOPE: { key: string; part: number; block: string | null; label: string }[] = [
-  { key: "149", part: 149, block: null, label: "2026 booth 150 · 2025 part 149" },
-  { key: "150", part: 150, block: null, label: "2026 booth 151 · 2025 part 150" },
-];
+// `block` is null throughout: Secunderabad house numbers are not block-lettered
+// the way Okhla's K-78 / G-10 are, so there is nothing to split a part by. If a
+// constituency ever needs block-level rows, add them here by hand. Delhi's
+// entries were part 65 and parts 61 block G / F.
+//
+// Labels come from partLabel(), which always names BOTH numbering schemes: a
+// surveyor holds 2026 paperwork while this query filters on 2025 numbers, so a
+// bare number means different places to the reader and to the code.
+export const PROGRESS_SCOPE: { key: string; part: number; block: string | null; label: string }[] =
+  FOCUS_PARTS.map((part) => ({ key: String(part), part, block: null, label: partLabel(part) }));
 const TODAY = "date(v.verified_at,'+330 minutes') = date('now','+330 minutes')"; // IST
 
 // The worklist: one row per elector who needs a visit, with their saved visit (if the visit matches the current tag).
