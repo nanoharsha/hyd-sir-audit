@@ -14,17 +14,24 @@ const AUDIT_MAX = 69;
 const PAGE_SIZE = 25;
 const NAME_LIMIT = 80;
 const EPIC_PATTERN = /^[A-Za-z]{3}\d+$/;
-const FORM_FOR_STATUS = { ASDD: "asdd", NOTICE: "notice", DELETED: "deleted" };
+// Mirrors FORM_FOR_STATUS in src/okhla_verify.ts — change one, change the other.
+// It decides which statuses get a saved visit attached to their card, so a status
+// missing here shows its visit online but not offline.
+const FORM_FOR_STATUS = { ASDD: "asdd", NOTICE: "notice", DELETED: "deleted", CLEARED: "cleared", NO_SIR: "nosir" };
 const normEpic = (e) => (e || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    // Version 2 adds "docs": photos and PDFs attached to a visit that has not been
+    // sent yet. They live here rather than in localStorage because localStorage
+    // holds about 5 MB and a form can carry five photos at 300-600 KB each.
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains("electors")) db.createObjectStore("electors", { keyPath: "id" });
       if (!db.objectStoreNames.contains("visits")) db.createObjectStore("visits", { keyPath: "voter_key" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("docs")) db.createObjectStore("docs", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -264,3 +271,35 @@ export async function cacheMeta(m) {
   } catch (e) {}
 }
 export const cachedMeta = () => getMeta("okmeta");
+
+
+/* ---- documents attached to a visit that is still a draft or waiting to be sent ----
+   Keyed "draft:<EPIC>" or "pend:<EPIC>". An empty list deletes the entry, so a form
+   whose photos were all removed does not leave a stale copy behind.
+
+   These REJECT on failure instead of swallowing it. The caller is deciding whether
+   it may tell a surveyor "saved on this phone", and a quiet failure here would be a
+   visit lost with a confirmation on screen. */
+export async function putDocs(key, docs) {
+  const db = await openDB();
+  const t = db.transaction("docs", "readwrite");
+  if (docs && docs.length) t.objectStore("docs").put({ key, docs });
+  else t.objectStore("docs").delete(key);
+  return done(t);
+}
+export async function getDocs(key) {
+  try {
+    const db = await openDB();
+    const row = await val(db.transaction("docs").objectStore("docs").get(key));
+    return row && Array.isArray(row.docs) ? row.docs : [];
+  } catch (e) {
+    return []; // reading is best-effort: an unreadable store means "no photos", never a crash
+  }
+}
+export async function delDocs(key) {
+  try {
+    await putDocs(key, []);
+  } catch (e) {
+    /* nothing to clean up if the store is unavailable */
+  }
+}

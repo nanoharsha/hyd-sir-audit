@@ -58,6 +58,7 @@ const S = {
   block: "", // "" = every block; otherwise the block letter (K)
   view: "search", // search (the opening tab) | progress | list | hearing | hearingdash
   prog: null, // /okhla/progress
+  reason: "", // "" = every reason; otherwise one ASD-D / notice reason the whole Progress view is narrowed to
   progScope: "", // "" = everything the dashboard covers; otherwise a scope key from the server ("65", "61-G")
   progAt: null,
   list: null, // {kind, label, email}
@@ -82,23 +83,43 @@ const lsGet = (k) => {
     return {};
   }
 };
+// Returns whether the write really happened. It used to swallow every error, which
+// meant a full phone looked exactly like a successful save.
 const lsSet = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
-  } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
 };
-const hasAnswer = (d) => Object.keys(d || {}).some((k) => k !== "wrong_reason" && String(d[k] || "").trim());
+
+/** Split a form's answers from its attached documents. The answers are a few hundred
+ *  bytes and stay in localStorage; the documents can be several MB and go to IndexedDB. */
+const splitDocs = (data) => {
+  const { docs, ...rest } = data || {};
+  return { rest, docs: Array.isArray(docs) ? docs : [] };
+};
+const hasAnswer = (d) => Object.keys(d || {}).some((k) => k !== "wrong_reason" && k !== "docs" && String(d[k] || "").trim());
 let draftTimer = null;
 function saveDraftSoon() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {
     if (!S.vf) return;
     const all = lsGet(LS_DRAFT);
-    if (hasAnswer(S.vf.data)) {
-      const m = findMember(S.vf.epic);
-      all[S.vf.epic] = { data: { ...S.vf.data }, name: (m && m.name) || S.vf.epic, t: Date.now() };
-    } else delete all[S.vf.epic];
+    const epic = S.vf.epic;
+    const { rest, docs } = splitDocs(S.vf.data);
+    if (hasAnswer(rest) || docs.length) {
+      const m = findMember(epic);
+      all[epic] = { data: rest, name: (m && m.name) || epic, t: Date.now() };
+    } else delete all[epic];
     lsSet(LS_DRAFT, all);
+    // Documents are rewritten only when they changed. Writing megabytes after every
+    // keystroke would make typing a remark stutter on a cheap phone.
+    if (S.vf.docsDirty) {
+      S.vf.docsDirty = false;
+      off.putDocs("draft:" + epic, docs).catch(() => {});
+    }
   }, 250);
 }
 function dropDraft(epic) {
@@ -106,11 +127,13 @@ function dropDraft(epic) {
   const all = lsGet(LS_DRAFT);
   delete all[epic];
   lsSet(LS_DRAFT, all);
+  off.delDocs("draft:" + epic);
 }
 function dropPending(epic) {
   const all = lsGet(LS_PEND);
   delete all[epic];
   lsSet(LS_PEND, all);
+  off.delDocs("pend:" + epic);
 }
 // what a card shows for an entry that is saved on the phone but not yet on the server
 const pendingView = (epic, item, formType) => ({ ...item.data, form_type: formType, _pending: true, updated_at: new Date(item.t).toISOString() });
@@ -137,7 +160,8 @@ async function flushPending() {
   for (const epic of keys) {
     const item = all[epic];
     try {
-      const saved = await api.request("/okhla/verify/" + epic, { method: "POST", body: item.data });
+      const docs = await off.getDocs("pend:" + epic);
+      const saved = await api.request("/okhla/verify/" + epic, { method: "POST", body: { ...item.data, docs } });
       off.rememberVisit(saved);
       dropPending(epic);
       dropDraft(epic);
@@ -382,11 +406,20 @@ function tilesHtml() {
   const scope = S.part
     ? partLabelFor(S.part)
     : rep(t("okFocusScope"), { booths: focus.map((pn) => newPartOf(pn)).join(", ") });
+  // The two big headline cards are folded away: they are a summary, not a tool, and
+  // open they pushed the search box a full screen down on a phone. The status tiles
+  // stay visible because they are filters a surveyor actually taps.
+  // A tile showing 0 is hidden unless it is the one currently selected: in the focus
+  // booths there is no pre-SIR deletion at all, and its tile cost a third of the first row.
+  const total = (S.meta.part_base || []).reduce((n, r) => n + r.roll_2025 + r.monthly_added - r.monthly_deleted, 0);
   return `
-    <div class="ok-scope">${esc(scope)}</div>
-    ${headlineHtml()}
+    <details class="ok-summary">
+      <summary>${esc(rep(t("okSummaryHd"), { n: fmt(total) }))}</summary>
+      <div class="ok-scope">${esc(scope)}</div>
+      ${headlineHtml()}
+    </details>
     <div class="ok-tiles">
-      ${STATUS_ORDER.filter((s) => s !== "PENDING" || c.PENDING).map(
+      ${STATUS_ORDER.filter((s) => (s !== "PENDING" || c.PENDING) && (c[s] > 0 || S.status === s)).map(
         (s) => `
         <button class="ok-tile s-${s}${S.status === s ? " on" : ""}" onclick="okhla.setStatus('${s}')">
           <span class="big">${fmt(c[s])}</span>
@@ -605,6 +638,7 @@ function verifySummaryHtml(m) {
   if (m.status === "ASDD") {
     lines.push(`${t("okQCorrect")}: ${b(t(YN_KEY[v.asdd_correct]))}${v.wrong_reason ? ` — ${esc(t(WRONG_KEY[v.wrong_reason]))}` : ""}`);
     if (v.enum_form) lines.push(`${t("okQEnum")}: ${b(t(ENUM_KEY[v.enum_form]))}`);
+    if (v.ack_no) lines.push(`${t("okQAckNo")}: ${b(v.ack_no)}`);
     if (v.form6_submitted)
       lines.push(
         `${t("okQForm6")}: ${b(t(YN_KEY[v.form6_submitted]))}` +
@@ -700,12 +734,14 @@ function checkboxes(field, opts, keyMap, value) {
 
 /** A phone already recorded for someone else at this address, if there is one. */
 function householdPhone(m) {
-  const hh = (S.data && S.data.households) || [];
-  for (const h of hh) {
+  // S.result is the search/list response the cards are drawn from (findMember reads
+  // the same). This once read a field called S.data that does not exist, so the
+  // button never appeared and nothing complained.
+  for (const h of (S.result && S.result.households) || []) {
     if (!h.members.some((x) => x.id === m.id)) continue;
     for (const o of h.members) {
-      const p = o.verification && o.verification.phone;
-      if (p && o.id !== m.id) return p;
+      const p = o.id !== m.id && o.verification && o.verification.phone;
+      if (p) return p;
     }
   }
   return "";
@@ -820,6 +856,8 @@ function formHtml(m) {
       h += q(t("okQEnum"), radios("enum_form", ENUM_OPTS, ENUM_KEY, d.enum_form));
       // The Form 6 questions were removed here on 2026-10-25: being wrongly on
       // the ASD-D list is a different matter from enrolling afresh.
+      h += q(t("okQAckNo"), `<input type="text" maxlength="60" value="${esc(d.ack_no || "")}"
+          oninput="okhla.vtext('ack_no',this.value)" />`);
       h += phoneQ2();
       h += docsHtml(m);
     }
@@ -977,12 +1015,27 @@ const KIND_KEY = {
   asdd_wrong: "okKAsddWrong", asdd_right: "okKAsddRight", asdd_unable: "okKAsddUnable", notice_not_received: "okKNoticeNotRecv",
   hearing_due: "okKHearingDue", notice_unable: "okKNoticeUnable", docs_not_submitted: "okKDocsNo", wrongful_deletion: "okKWrongful", total_cases: "okKTotalCases", today: "okKToday",
   houses_done: "okKHousesDone", houses_partial: "okKHousesPartial", houses_none: "okKHousesNone", houses_all: "okKHousesAll",
+  cleared_done: "okKClearedDone", cleared_left: "okKClearedLeft", nosir_done: "okKNoSirDone", nosir_left: "okKNoSirLeft",
+  cleared_needs_correction: "okKClNeedsFix", cleared_form8_pending: "okKClForm8Pending", nosir_no_form6: "okKNsNoForm6",
 };
+
+// A reason is data from the official lists, in English. The label is looked up by a
+// slug of the text so it can be translated; a reason we have no translation for
+// simply shows as printed, never blank.
+const reasonLabel = (r) => {
+  const key = "okRsn_" + String(r).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const v = t(key);
+  return v === key ? r : v;
+};
+const LIST_KIND = { ASDD: "asdd", NOTICE: "notice", CLEARED: "cleared", NO_SIR: "nosir", DELETED: "deleted" };
 
 async function loadProgress() {
   S.error = "";
   try {
-    S.prog = await api.request("/okhla/progress" + (S.progScope ? "?scope=" + encodeURIComponent(S.progScope) : ""));
+    const q = new URLSearchParams();
+    if (S.progScope) q.set("scope", S.progScope);
+    if (S.reason) q.set("reason", S.reason);
+    S.prog = await api.request("/okhla/progress" + (q.toString() ? "?" + q.toString() : ""));
     S.progAt = new Date();
   } catch (e) {
     S.error = e.message || String(e);
@@ -997,6 +1050,7 @@ async function runList() {
   render();
   const qs = new URLSearchParams({ kind: S.list.kind, page: S.listPage });
   if (S.progScope) qs.set("scope", S.progScope);
+  if (S.reason) qs.set("reason", S.reason);
   if (S.list.email) qs.set("email", S.list.email);
   try {
     S.result = await api.request("/okhla/list?" + qs.toString());
@@ -1014,13 +1068,46 @@ const num = (n, kind, extra = "") =>
   n ? `<span class="drill-num" onclick="okhla.openList('${kind}'${extra})">${fmt(n)}</span>` : `<span class="muted">0</span>`;
 const pct = (a, b) => (b ? Math.round((1000 * a) / b) / 10 : 0);
 
+/** One dropdown narrowing the whole Progress view to a single ASD-D or notice reason,
+ *  so a team can work "everyone marked Death" in one pass. Counts beside each option
+ *  are NOT narrowed by the current choice — otherwise picking one would hide the
+ *  rest and leave no way back to them. */
+function reasonPickerHtml(P) {
+  const reasons = P.reasons || [];
+  if (!reasons.length) return "";
+  const group = (st, key) => {
+    const rows = reasons.filter((r) => r.status === st);
+    return rows.length
+      ? `<optgroup label="${esc(t(key))}">${rows
+          .map((r) => `<option value="${esc(r.reason)}"${S.reason === r.reason ? " selected" : ""}>${esc(reasonLabel(r.reason))} (${fmt(r.n)})</option>`)
+          .join("")}</optgroup>`
+      : "";
+  };
+  return `<div class="ok-reasonbar">
+    <label class="f-label" for="ok-reason">${esc(t("okReasonFilter"))}</label>
+    <select id="ok-reason" onchange="okhla.setReason(this.value)">
+      <option value="">${esc(t("okReasonAll"))}</option>
+      ${group("ASDD", "okReasonGrpAsdd")}${group("NOTICE", "okReasonGrpNotice")}
+    </select>
+    ${S.reason ? `<div class="ok-hint">${esc(rep(t("okReasonShowing"), { r: reasonLabel(S.reason) }))}</div>` : ""}
+  </div>`;
+}
+
 function progressHtml() {
   const P = S.prog;
   if (S.error && !P) return `<div class="empty">${esc(S.error)}</div>`;
   if (!P) return `<div class="empty">${esc(t("wlLoading"))}</div>`;
   const E = P.electors;
-  const tot = ["ASDD", "NOTICE", "DELETED"].reduce((a, k) => a + ((E[k] || {}).total || 0), 0);
-  const done = ["ASDD", "NOTICE", "DELETED"].reduce((a, k) => a + ((E[k] || {}).done || 0), 0);
+  // Every list with a visit form. This once summed only ASDD, NOTICE and DELETED, so
+  // the headline read "/ 1,216" while the worklist was 1,839 and the houses figure
+  // beside it (676) already included the two newer lists.
+  const LISTS = ["ASDD", "NOTICE", "CLEARED", "NO_SIR", "DELETED"];
+  const tot = LISTS.reduce((a, k) => a + ((E[k] || {}).total || 0), 0);
+  const done = LISTS.reduce((a, k) => a + ((E[k] || {}).done || 0), 0);
+  const CL = P.cleared || {};
+  const NS = P.nosir || {};
+  const clearedVisits = (E.CLEARED || {}).done || 0;
+  const nosirVisits = (E.NO_SIR || {}).done || 0;
   const H = P.houses;
   const asddVisits = (E.ASDD || {}).done || 0;
   const wrong = P.asdd.no || 0;
@@ -1048,6 +1135,7 @@ function progressHtml() {
       <button class="secondary" onclick="okhla.refreshProgress()">${esc(t("okRefresh"))}</button>
       <span class="muted">${esc(t("okUpdated"))} ${esc(at)}</span>
     </div>
+    ${reasonPickerHtml(P)}
 
     <div class="dash-grid">
       <div class="dash-stat headline">
@@ -1066,7 +1154,33 @@ function progressHtml() {
       ${found("asdd_wrong", wrong, t("okKAsddWrong"), rep(t("okOfAsddVisits"), { n: fmt(asddVisits), p: pct(wrong, asddVisits) }), "asdd")}
       ${found("wrongful_deletion", P.deleted.wrongful || 0, t("okKWrongful"), rep(t("okOfDelVisits"), { n: fmt(delVisits) }), "deleted")}
       ${found("notice_not_received", notRecv, t("okKNoticeNotRecv"), rep(t("okOfNoticeVisits"), { n: fmt(noticeVisits), p: pct(notRecv, noticeVisits) }), "notice")}
+      ${
+        clearedVisits
+          ? found("cleared_needs_correction", CL.needs_fix || 0, t("okKClNeedsFix"), rep(t("okOfClVisits"), { n: fmt(clearedVisits), p: pct(CL.needs_fix || 0, clearedVisits) }), "notice") +
+            found("cleared_form8_pending", CL.form8_pending || 0, t("okKClForm8Pending"), t("okKClForm8PendingSub"), "total")
+          : ""
+      }
+      ${
+        nosirVisits
+          ? found("nosir_no_form6", NS.no_form6 || 0, t("okKNsNoForm6"), rep(t("okOfNsVisits"), { n: fmt(nosirVisits), p: pct(NS.no_form6 || 0, nosirVisits) }), "total")
+          : ""
+      }
       ${found("today", P.today, t("okVisitsToday"), t("okVisitsTodaySub"))}
+    </div>
+
+    <div class="section-title">${esc(t("okByList"))}</div>
+    <div class="ok-lists">
+      ${LISTS.filter((k) => (E[k] || {}).total)
+        .map((k) => {
+          const x = E[k];
+          const kind = LIST_KIND[k];
+          return `<div class="ok-listrow">
+            <div class="ok-listrow-hd"><span>${esc(t(TILE_KEY[k] || STATUS_KEY[k]))}</span><b>${num(x.done, kind + "_done")} <small>/ ${fmt(x.total)}</small></b></div>
+            <div class="progress-bar"><span style="width:${Math.min(100, pct(x.done, x.total))}%"></span></div>
+            <div class="dash-def">${pct(x.done, x.total)}% ${esc(t("okDone"))} · ${num(x.total - x.done, kind + "_left")} ${esc(t("okLeft"))}</div>
+          </div>`;
+        })
+        .join("")}
     </div>
 
     <div class="section-title">${esc(t("okProgVolunteers"))}</div>
@@ -1104,7 +1218,7 @@ function progressHtml() {
 
 function subnavHtml() {
   const tab = (v, label) =>
-    `<button class="ok-subtab${v === "hearing" ? " ph" : ""}${S.view === v || (v === "progress" && S.view === "list") ? " on" : ""}" onclick="okhla.setView('${v}')">${esc(label)}</button>`;
+    `<button class="ok-subtab${v === "hearing" || v === "hearingdash" ? " ph" : ""}${S.view === v || (v === "progress" && S.view === "list") ? " on" : ""}" onclick="okhla.setView('${v}')">${esc(label)}</button>`;
   // Search first, then Progress: those are the daily tools. The two Public
   // Hearing tabs come last because a hearing happens occasionally, and having
   // them first cost a surveyor a tap on every single lookup (owner, 2026-10-25).
@@ -1114,7 +1228,7 @@ function subnavHtml() {
 function listHeaderHtml() {
   const L = S.list;
   const r = S.result;
-  const label = L.label || t(KIND_KEY[L.kind] || "okKHousesAll");
+  const label = (L.label || t(KIND_KEY[L.kind] || "okKHousesAll")) + (S.reason ? ` — ${reasonLabel(S.reason)}` : "");
   const sc = S.prog && S.prog.scopes ? S.prog.scopes.find((x) => x.key === S.progScope) || (S.prog.scopes.length === 1 ? S.prog.scopes[0] : null) : null;
   const scope = sc ? ` · ${sc.label}` : "";
   return `<div class="ok-listhd">
@@ -1137,7 +1251,10 @@ function render() {
       ? progressHtml()
       : S.view === "list"
       ? `${listHeaderHtml()}<div id="ok-results">${resultsHtml()}</div>`
-      : `${offlineStripHtml()}${tilesHtml()}${unsavedBannerHtml()}${searchBarHtml()}<div id="ok-results">${resultsHtml()}</div>`;
+      : // Search first. Unsent visits stay above it because they are the one thing here
+        // that exists nowhere else. The offline-copy strip drops to the bottom: it is
+        // upkeep, read occasionally, and used to push the search box down a screen.
+        `${unsavedBannerHtml()}${searchBarHtml()}${tilesHtml()}<div id="ok-results">${resultsHtml()}</div>${offlineStripHtml()}`;
   root.innerHTML = `
     <div class="section-title">${esc(t("okTitle"))}</div>
     ${subnavHtml()}
@@ -1255,6 +1372,12 @@ const handlers = {
     S.prog = null;
     loadProgress();
   },
+  setReason(v) {
+    S.reason = v || "";
+    S.view = "progress";
+    S.prog = null;
+    loadProgress();
+  },
   openList(kind, email, scope) {
     if (scope) S.progScope = scope;
     S.list = { kind, email: email || "", label: "" };
@@ -1303,8 +1426,20 @@ const handlers = {
       data.docs = Array.isArray(keep.data.docs) ? keep.data.docs : [];
       restored = true;
     }
-    S.vf = { epic, error: "", saving: false, data, restored };
+    S.vf = { epic, error: "", saving: false, data, restored, docsDirty: false };
     render();
+    // Photos kept on this phone come back from IndexedDB; the answers above were
+    // already shown, so the form never waits on them. Pending beats draft, matching
+    // the order the answers were chosen in.
+    if (restored) {
+      const wasPending = !!lsGet(LS_PEND)[epic];
+      off.getDocs((wasPending ? "pend:" : "draft:") + epic).then((docs) => {
+        if (S.vf && S.vf.epic === epic && docs.length) {
+          S.vf.data.docs = docs;
+          handlers.vredraw();
+        }
+      });
+    }
     const box = document.getElementById("ok-vf-" + epic);
     if (box) box.scrollIntoView({ block: "nearest" });
   },
@@ -1314,7 +1449,7 @@ const handlers = {
     d[field] = value;
     // an answer that no longer applies is cleared, so nothing stale is ever saved
     if (field === "asdd_correct" && value !== "no") {
-      d.enum_form = d.form6_submitted = d.needs_assistance = d.form6_given = d.phone = "";
+      d.enum_form = d.form6_submitted = d.needs_assistance = d.form6_given = d.phone = d.ack_no = "";
     }
     if (field === "del_status" && value !== "wrongful") {
       d.del_aware = d.del_got_form = d.del_submitted_form = d.phone = "";
@@ -1369,6 +1504,8 @@ const handlers = {
     if (d.docs.length >= MAX_DOCS) return;
     try {
       d.docs.push(file.type === "application/pdf" ? await readAsDataUrl(file) : await shrinkImage(file));
+      S.vf.docsDirty = true;
+      saveDraftSoon();
     } catch (e) {
       S.vf.error = (e && e.message) || t("okDocFailed");
     }
@@ -1377,6 +1514,8 @@ const handlers = {
   vdocdel(i) {
     if (!S.vf || !Array.isArray(S.vf.data.docs)) return;
     S.vf.data.docs.splice(i, 1);
+    S.vf.docsDirty = true;
+    saveDraftSoon();
     this.vredraw();
   },
   vtext(field, value) {
@@ -1449,10 +1588,28 @@ const handlers = {
       else toast(t("okSavedToast"));
     } catch (e) {
       if (!e || e.status === 0 || e.status >= 500) {
-        // no signal / server busy: keep the entry on the phone and send it again by itself
+        // no signal / server busy: keep the entry on the phone and send it again by itself.
+        // The answers go to localStorage and the photos to IndexedDB. Both must really
+        // land before we say so: an unsent visit is the one thing in this app that
+        // exists nowhere else, and a "queued" message over a failed write is a visit
+        // lost with the surveyor believing it is safe.
+        const { rest, docs } = splitDocs(d);
         const all = lsGet(LS_PEND);
-        all[epic] = { data: { ...d }, name: (m && m.name) || epic, t: Date.now(), tries: 0 };
-        lsSet(LS_PEND, all);
+        all[epic] = { data: rest, name: (m && m.name) || epic, t: Date.now(), tries: 0 };
+        let kept = true;
+        try {
+          await off.putDocs("pend:" + epic, docs);
+        } catch (err) {
+          kept = false;
+        }
+        if (!kept || !lsSet(LS_PEND, all)) {
+          // Leave the form open with everything still in it, and say plainly what happened.
+          S.vf.saving = false;
+          S.vf.error = t("okErrStorageFull");
+          const bx = document.getElementById("ok-vf-" + epic);
+          if (m && bx) bx.innerHTML = formHtml(m);
+          return;
+        }
         dropDraft(epic);
         if (m) {
           m.pending = true;

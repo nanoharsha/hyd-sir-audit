@@ -59,7 +59,7 @@ export async function okhlaProgress(db: D1Database, key: string | null, reason: 
   const scoped = sc.sql + rc.sql;
   const allBinds = [...sc.binds, ...rc.binds];
   const q = (sql: string) => db.prepare(sql).bind(...allBinds).all();
-  const [byStatus, houses, asdd, notice, deleted, byPart, today, who] = await Promise.all([
+  const [byStatus, houses, asdd, notice, deleted, byPart, today, who, clearedQ, nosirQ] = await Promise.all([
     q(`SELECT e.status s, COUNT(*) total, SUM(v.voter_key IS NOT NULL) done ${WORKLIST}${scoped} GROUP BY e.status`),
     q(`SELECT COUNT(*) total, SUM(d = n) done, SUM(d > 0 AND d < n) partial, SUM(d = 0) none FROM
          (SELECT e.hh_key, COUNT(*) n, SUM(v.voter_key IS NOT NULL) d ${WORKLIST}${scoped} GROUP BY e.hh_key)`),
@@ -90,6 +90,19 @@ export async function okhlaProgress(db: D1Database, key: string | null, reason: 
       )
       .bind(...allBinds)
       .all(),
+    // SIR Cleared: of the visits made, how many found something to correct, and how
+    // many of those still have no Form 8 filed — the follow-up a team must chase.
+    q(`SELECT SUM(COALESCE(v.cl_corrections,'') NOT IN ('','none')) needs_fix,
+              SUM(COALESCE(v.cl_corrections,'') = 'none') clean,
+              SUM(COALESCE(v.cl_corrections,'') NOT IN ('','none') AND COALESCE(v.cl_form8,'') = 'no') form8_pending,
+              SUM(COALESCE(v.cl_corrections,'') NOT IN ('','none') AND v.cl_form8 = 'yes') form8_filed
+         ${WORKLIST}${scoped} AND e.status='CLEARED' AND v.voter_key IS NOT NULL`),
+    // NO SIR: removed with no published reason. Form 6 is the remedy, so the figure
+    // that matters is how many have filed one and how, and how many have not.
+    q(`SELECT SUM(v.form6_mode = 'no') no_form6,
+              SUM(v.form6_mode IN ('online','offline','both')) form6_filed,
+              SUM(COALESCE(v.ns_has_id,'') = 'no') no_id
+         ${WORKLIST}${scoped} AND e.status='NO_SIR' AND v.voter_key IS NOT NULL`),
   ]);
   // names: a second small query keeps the SQL above simple
   const names = new Map<string, string>();
@@ -119,6 +132,8 @@ export async function okhlaProgress(db: D1Database, key: string | null, reason: 
     asdd: Object.fromEntries((asdd.results as any[]).map((r) => [r.a, r.n])),
     notice: notice.results,
     deleted: Object.fromEntries((deleted.results as any[]).map((r) => [r.st, r.n])),
+    cleared: ((clearedQ.results as any[])[0]) || {},
+    nosir: ((nosirQ.results as any[])[0]) || {},
     today: ((today.results as any[])[0] || {}).n || 0,
     parts: byPart,
     volunteers: (who.results as any[]).map((r) => ({ email: r.email, name: names.get(r.email) || r.email.split("@")[0], total: r.total, today: r.today || 0 })),

@@ -175,7 +175,9 @@ export function validate(formType: string, p: VerifyPayload) {
       // (2026-10-25): an ASD-D entry being wrong is a different matter from
       // enrolling afresh, and asking here confused surveyors. The columns stay
       // so older answers remain readable.
-      out = { ...NONE, asddCorrect, wrongReason: null, enumForm: pick(p.enum_form, ENUM_FORM), phone, docKeys: docs, remarks };
+      // ackNo is the acknowledgement number of the enumeration form, listed on this
+      // form by the field team. It shares the ack_no column with the Form 6 flows.
+      out = { ...NONE, asddCorrect, wrongReason: null, enumForm: pick(p.enum_form, ENUM_FORM), ackNo: text(p.ack_no, 60), phone, docKeys: docs, remarks };
     } else {
       out = { ...NONE, asddCorrect, remarks }; // "yes", "unable to verify" or no answer: the form ends there
     }
@@ -277,7 +279,7 @@ export async function saveVerification(
     if (formType === "asdd") {
       // Form 6 was dropped from this form; its old columns are left untouched so
       // answers recorded before 2026-10-25 stay readable.
-      if (merged.asddCorrect !== "no") merged.enumForm = merged.phone = null;
+      if (merged.asddCorrect !== "no") merged.enumForm = merged.phone = merged.ackNo = null;
     } else if (formType === "notice") {
       if (merged.noticeReceived === "unable") merged.hearing = merged.docs = merged.phone = null;
     } else if (formType === "deleted") {
