@@ -123,6 +123,12 @@ def hh_sort_key(norm):
     return re.sub(r"\d+", lambda m: m.group().zfill(6), norm)
 
 
+def split_reasons(detail):
+    """One reason per entry. The notice list comma-joins multiple reasons into one
+    cell, so an elector flagged for two things must be findable under either —
+    see migration_027.sql for why substring matching on the raw text is a trap."""
+    return [r.strip() for r in (detail or "").split(",") if r.strip()]
+
 def int_or_none(x):
     try:
         return int(str(x).strip())
@@ -184,7 +190,7 @@ def main():
         roll += rd(f)
     roll.sort(key=lambda r: (int_or_none(r.get("part_number")) or 0, int_or_none(r.get("index")) or 0))
 
-    rows, tokens = [], []
+    rows, tokens, reason_rows = [], [], []
     roll_epics = set()
     counts = Counter()
     part_status = Counter()
@@ -259,6 +265,9 @@ def main():
 
         counts[status] += 1
         part_status[(op, status)] += 1
+        if status in ("ASDD", "NOTICE"):
+            for rsn in split_reasons(detail):
+                reason_rows.append((i, status, rsn))
 
         rows.append((
             i, op, int_or_none(r.get("index")), section_no, section_name,
@@ -298,6 +307,8 @@ def main():
             ))
             counts[status] += 1
             part_status[(old_part_default, status)] += 1
+            for rsn in split_reasons(reason):
+                reason_rows.append((next_id, status, rsn))
             next_id += 1
             extra += 1
 
@@ -341,6 +352,7 @@ def main():
         "draft_not_in_roll": str(sum(1 for e in draft if e not in roll_epics)),
         "list_only_electors": str(extra),
         "house_labels_collapsed": str(len(split)),
+        "reason_rows": str(len(reason_rows)),
     }
 
     print(f"electors {len(rows):,}  tokens {len(tokens):,}  parts {len(parts)}")
@@ -384,6 +396,8 @@ def main():
                 fh.write(s + "\n")
             for s in stmts("ok_tokens", "token, elector_id", tokens, 400):
                 fh.write(s + "\n")
+            for s in stmts("ok_elector_reasons", "elector_id, status, reason", reason_rows, 200):
+                fh.write(s.replace("INSERT INTO", "INSERT OR IGNORE INTO") + "\n")
             for s in stmts("ok_parts", "old_part, label, localities, new_parts, draft_available, electors", parts):
                 fh.write(s + "\n")
             for s in stmts("ok_part_status", "old_part, status, n",
@@ -436,7 +450,8 @@ def main():
 
     con = sqlite3.connect(db)
     cur = con.cursor()
-    for t in ("ok_electors", "ok_tokens", "ok_parts", "ok_part_status", "ok_part_base", "ok_meta", "ok_blocks"):
+    for t in ("ok_electors", "ok_tokens", "ok_parts", "ok_part_status", "ok_part_base", "ok_meta",
+              "ok_blocks", "ok_elector_reasons"):
         cur.execute(f"DELETE FROM {t}")
     ELECTOR_COLS = ("id, old_part, serial_2025, section_no, section_name, house_raw, hh_norm, hh_key, hh_sort, "
                     "house_floor, supplement, epic_id, epic_norm, name, name_upper, relation_type, relation_name, "
@@ -445,6 +460,7 @@ def main():
                     "draft_basis, alt_epic_norm, block")
     cur.executemany(f"INSERT INTO ok_electors ({ELECTOR_COLS}) VALUES (" + ",".join("?" * 35) + ")", rows)
     cur.executemany("INSERT INTO ok_tokens VALUES (?,?)", tokens)
+    cur.executemany("INSERT OR IGNORE INTO ok_elector_reasons (elector_id, status, reason) VALUES (?,?,?)", reason_rows)
     cur.executemany("INSERT INTO ok_parts VALUES (?,?,?,?,?,?)", parts)
     cur.executemany("INSERT INTO ok_part_status VALUES (?,?,?)", [(p, s, n) for (p, s), n in part_status.items()])
     cur.executemany("INSERT INTO ok_meta VALUES (?,?)", list(meta.items()))
