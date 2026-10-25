@@ -255,6 +255,39 @@
   .ok-view .dash-stat .dash-def { margin-top: var(--sp-2); }
   .ok-view .drill-num { cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; color: var(--navy); }
   .ok-view .muted { color: var(--ink-muted); font-size: 12px; }
+  /* Documents on a verification form. Thumbnails wrap rather than scroll
+     sideways, because a surveyor is holding the phone one-handed. */
+  .doc-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-3); }
+  .doc-thumb { position: relative; width: 64px; height: 64px; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2, #f2f2f2); }
+  .doc-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .doc-pdf { font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+  .doc-thumb button { position: absolute; top: 0; right: 0; width: 22px; height: 22px; min-width: 0; padding: 0; line-height: 1; border: 0; border-radius: 0 0 0 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 15px; }
+  /* 44px minimum so the control is reliably tappable. */
+  .doc-add { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--sp-3); border: 1px dashed var(--rule); border-radius: 6px; font-size: 14px; cursor: pointer; }
+  .doc-add input { display: none; }
+  /* Multi-select answers stack: side-by-side wrapping made it ambiguous which
+     label belonged to which box at phone width. */
+  .f-opts.f-stack { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .f-opts.f-stack .check { display: flex; align-items: center; gap: var(--sp-3); min-height: 44px; text-align: left; }
+  /* The form's global input rule stretches every control to the full width and
+     44px tall, which on a checkbox leaves the box marooned from its label. Pin
+     the box to its natural size and let the LABEL carry the tap target. */
+  .f-opts.f-stack .check input[type="checkbox"] {
+    flex: 0 0 auto; width: 20px; min-width: 20px; height: 20px; min-height: 0; margin: 0;
+  }
+  .f-opts.f-stack .check > span, .f-opts.f-stack .check { flex-wrap: nowrap; }
+  .link-btn { background: none; border: 0; padding: var(--sp-1) 0; margin-top: var(--sp-1); color: var(--link, #1f4e79); text-decoration: underline; font-size: 14px; min-height: 36px; }
+
+  /* The booth table has five columns and did not fit a phone. Below 560px each
+     row becomes a block with its figures labelled, so nothing scrolls sideways. */
+  @media (max-width: 560px) {
+    .ok-view table.parts, .ok-view table.parts tbody, .ok-view table.parts tr, .ok-view table.parts td { display: block; width: 100%; }
+    .ok-view table.parts thead { display: none; }
+    .ok-view table.parts tr { border: 1px solid var(--rule); border-radius: 8px; margin-bottom: var(--sp-3); padding: var(--sp-2); }
+    .ok-view table.parts td { border: 0; display: flex; justify-content: space-between; gap: var(--sp-3); text-align: right; padding: var(--sp-1) var(--sp-2); }
+    .ok-view table.parts td:first-child { text-align: left; font-weight: 600; border-bottom: 1px solid var(--rule); margin-bottom: var(--sp-1); }
+    .ok-view table.parts td[data-label]::before { content: attr(data-label); font-weight: 400; color: var(--muted, #666); text-align: left; }
+  }
   .ok-view table.parts { width: 100%; border-collapse: collapse; margin-bottom: var(--sp-5); font-size: 14px; }
   .ok-view table.parts th, .ok-view table.parts td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--rule); text-align: right; font-variant-numeric: tabular-nums; }
   .ok-view table.parts th:first-child, .ok-view table.parts td:first-child { text-align: left; }

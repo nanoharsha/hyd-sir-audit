@@ -531,17 +531,49 @@ function memberHtml(m, hit) {
 //           submitted it to the BLO?; phone
 // Questions appear only when they apply; the server re-validates (src/okhla_verify.ts).
 const normEpic = (e) => String(e || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-const FORM_STATUSES = ["ASDD", "NOTICE", "DELETED"];
-const ENUM_OPTS = ["yes", "not_generated", "blo_did_not_collect", "other"]; // not_received_from_blo kept in ENUM_KEY only to show old visits
-const ENUM_KEY = { yes: "okEnYes", not_received_from_blo: "okEnNotRecv", not_generated: "okEnNotGen", blo_did_not_collect: "okEnNotColl", other: "okEnOther" };
+const FORM_STATUSES = ["ASDD", "NOTICE", "DELETED", "CLEARED", "NO_SIR"];
+// Reworded 2026-10-25. The old values stay in the KEY maps only so a visit saved
+// before then still renders its answer instead of showing a blank.
+const ENUM_OPTS = ["yes", "not_collected_from_blo", "found_with_elector", "other"];
+const ENUM_KEY = {
+  yes: "okEnYes", not_collected_from_blo: "okEnNotColl2", found_with_elector: "okEnFound", other: "okEnOther",
+  not_received_from_blo: "okEnNotRecv", not_generated: "okEnNotGen", blo_did_not_collect: "okEnNotColl",
+};
+// Which roll fields a cleared elector may need corrected. Multi-select: a Form 8
+// can fix several at once.
+const CORRECTION_OPTS = ["name", "dob_age", "gender", "photo", "relative_name", "relation_type", "address"];
+const CORRECTION_KEY = {
+  name: "okCorName", dob_age: "okCorDob", gender: "okCorGender", photo: "okCorPhoto",
+  relative_name: "okCorRelName", relation_type: "okCorRelType", address: "okCorAddress",
+};
+const FORM6_OPTS = ["online", "offline", "both", "no"];
+const FORM6_KEY = { online: "okF6Online", offline: "okF6Offline", both: "okF6Both", no: "okNo" };
 const WRONG_KEY = { shifted: "okWrShifted", dead: "okWrDead", absent: "okWrAbsent", duplicate: "okWrDup" };
 const YN_KEY = { yes: "okYes", no: "okNo", unable: "okUnable" };
 const HEARING_KEY = { completed: "okHrCompleted", due: "okHrDue", not_known: "okHrNotKnown" };
-const DOCS_KEY = { yes: "okYes", no: "okNo", unaware: "okDocUnaware" };
+// "yes" is an old value, kept so earlier visits still render.
+const DOCS_OPTS = ["yes_sir", "yes_other", "no", "unaware"];
+const DOCS_KEY = { yes_sir: "okDocYesSir", yes_other: "okDocYesOther", no: "okNo", unaware: "okDocUnaware", yes: "okYes" };
 const DELSTAT_KEY = { wrongful: "okDelWrongful", valid: "okDelValid" };
+// Every answer a form can hold. Used to seed the edit form from a saved visit,
+// to decide whether anything was answered at all, and to restore a draft kept on
+// the phone — so a field missing here is silently dropped when a visit is edited.
+/** Documents are stored as a JSON array of R2 keys; tolerate anything else. */
+function parseDocKeys(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
 const DATA_KEYS = [
   "asdd_correct", "wrong_reason", "enum_form", "form6_submitted", "needs_assistance", "form6_given", "phone", "remarks",
   "notice_received", "hearing_status", "docs_submitted", "del_status", "del_aware", "del_got_form", "del_submitted_form",
+  "cl_corrections", "cl_form8", "ns_has_id", "ns_epic_text", "ns_last_voted", "form6_mode", "ack_no",
 ];
 
 function findMember(epic) {
@@ -567,6 +599,18 @@ function verifySummaryHtml(m) {
     lines.push(`${t("okQNoticeRecv")}: ${b(t(YN_KEY[v.notice_received]))}`);
     if (v.hearing_status) lines.push(`${t("okQHearing")}: ${b(t(HEARING_KEY[v.hearing_status]))}`);
     if (v.docs_submitted) lines.push(`${t("okQDocs")}: ${b(t(DOCS_KEY[v.docs_submitted]))}`);
+  } else if (m.status === "CLEARED") {
+    const fixes = correctionList(v.cl_corrections);
+    lines.push(
+      `${t("okQCorrections")}: ${b(fixes.length ? fixes.map((f) => t(CORRECTION_KEY[f] || f)).join(", ") : t("okCorNone"))}`
+    );
+    if (v.cl_form8) lines.push(`${t("okQForm8")}: ${b(t(YN_KEY[v.cl_form8]))}`);
+  } else if (m.status === "NO_SIR") {
+    if (v.ns_has_id) lines.push(`${t("okQHasId")}: ${b(t(YN_KEY[v.ns_has_id]))}`);
+    if (v.ns_epic_text) lines.push(`${t("okQEpicText")}: ${b(v.ns_epic_text)}`);
+    if (v.ns_last_voted) lines.push(`${t("okQLastVoted")}: ${b(v.ns_last_voted)}`);
+    if (v.form6_mode) lines.push(`${t("okQForm6Mode")}: ${b(t(FORM6_KEY[v.form6_mode]))}`);
+    if (v.ack_no) lines.push(`${t("okQAckNo")}: ${b(v.ack_no)}`);
   } else {
     lines.push(`${t("okQDelStatus")}: ${b(t(DELSTAT_KEY[v.del_status]))}`);
     if (v.del_aware) lines.push(`${t("okQDelAware")}: ${b(t(YN_KEY[v.del_aware]))}`);
@@ -578,6 +622,22 @@ function verifySummaryHtml(m) {
   }
   if (v.phone) lines.push(`${t("okQPhone")}: ${b(v.phone)}`);
   if (v.remarks) lines.push(`${t("okQRemarks")}: ${esc(v.remarks)}`);
+  let keys = [];
+  try {
+    keys = v.doc_keys ? JSON.parse(v.doc_keys) : [];
+  } catch {
+    keys = []; // a half-synced row should not blank the whole summary
+  }
+  if (keys.length) {
+    const thumbs = keys
+      .map((k) =>
+        /\.pdf$/.test(k)
+          ? `<a class="doc-thumb" href="/api/uploads/${esc(k)}" target="_blank" rel="noopener"><span class="doc-pdf">PDF</span></a>`
+          : `<a class="doc-thumb" href="/api/uploads/${esc(k)}" target="_blank" rel="noopener"><img src="/api/uploads/${esc(k)}" alt=""></a>`
+      )
+      .join("");
+    lines.push(`${t("okQDocsUpload").replace("{n}", keys.length)}<div class="doc-row">${thumbs}</div>`);
+  }
   return `
     <div class="ok-vsum">
       <div class="ok-vsum-hd">${
@@ -604,6 +664,113 @@ function guideHtml(m) {
   return `<div class="ok-guide"><b>${esc(t("okGuideHd"))}</b><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></div>`;
 }
 
+/** The multi-select stores a comma-joined string; "none" means "checked, nothing wrong". */
+function correctionList(v) {
+  if (!v || v === "none") return [];
+  return String(v).split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+function checkboxes(field, opts, keyMap, value) {
+  const on = new Set(correctionList(value));
+  const row = (o) =>
+    `<label class="check"><input type="checkbox" ${on.has(o) ? "checked" : ""}
+      onchange="okhla.vtoggle('${field}','${o}')" /> ${esc(t(keyMap[o]))}</label>`;
+  // "Nothing needs correcting" is a real answer and must be distinguishable from
+  // an unanswered question, so it is its own box rather than the absence of ticks.
+  const none = `<label class="check"><input type="checkbox" ${value === "none" ? "checked" : ""}
+      onchange="okhla.vtoggle('${field}','none')" /> ${esc(t("okCorNone"))}</label>`;
+  return `<div class="f-opts f-stack">${none}${opts.map(row).join("")}</div>`;
+}
+
+/** A phone already recorded for someone else at this address, if there is one. */
+function householdPhone(m) {
+  const hh = (S.data && S.data.households) || [];
+  for (const h of hh) {
+    if (!h.members.some((x) => x.id === m.id)) continue;
+    for (const o of h.members) {
+      const p = o.verification && o.verification.phone;
+      if (p && o.id !== m.id) return p;
+    }
+  }
+  return "";
+}
+
+/** Documents: photograph each one, or attach a PDF the elector already has. */
+function docsHtml(m) {
+  const d = S.vf.data;
+  const docs = Array.isArray(d.docs) ? d.docs : [];
+  const thumbs = docs
+    .map((src, i) => {
+      const isPdf = src.startsWith("data:application/pdf") || /\.pdf$/.test(src);
+      const img = isPdf
+        ? `<span class="doc-pdf">PDF</span>`
+        : `<img src="${src.startsWith("data:") ? src : "/api/uploads/" + esc(src)}" alt="">`;
+      return `<span class="doc-thumb">${img}<button type="button" onclick="okhla.vdocdel(${i})" aria-label="${esc(t("okDocRemove"))}">&times;</button></span>`;
+    })
+    .join("");
+  const room = docs.length < MAX_DOCS;
+  return (
+    `<div class="f-label">${esc(rep(t("okQDocsUpload"), { n: MAX_DOCS }))}</div>` +
+    `<div class="doc-row">${thumbs}` +
+    (room
+      ? `<label class="doc-add">${esc(t("okDocCamera"))}
+           <input type="file" accept="image/*" capture="environment" onchange="okhla.vdocadd(this)" /></label>
+         <label class="doc-add">${esc(t("okDocFile"))}
+           <input type="file" accept="image/*,application/pdf" onchange="okhla.vdocadd(this)" /></label>`
+      : `<span class="ok-hint">${esc(rep(t("okDocFull"), { n: MAX_DOCS }))}</span>`) +
+    `</div>`
+  );
+}
+
+/** What a Form 6 actually needs, so a surveyor can say it at the door. */
+function form6HelpHtml() {
+  const items = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `<li>${esc(t("okF6Req" + i))}</li>`).join("");
+  return `<details class="ok-guide"><summary>${esc(t("okF6ReqHd"))}</summary><ol>${items}</ol></details>`;
+}
+
+/**
+ * Shrink a captured photo before it is queued. The offline outbox holds these as
+ * data: URLs in IndexedDB, so a surveyor working a street without signal can be
+ * carrying dozens: full-resolution camera files would fill the phone. Mirrors the
+ * rules used by the first-generation capture in worklist-tab.js.
+ */
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const maxEdge = 1600;
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject(new Error(t("okDocFailed")));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error(t("okDocFailed")));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** A PDF cannot be shrunk here, so it is sent as-is and the server caps its size. */
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error(t("okDocFailed")));
+    r.readAsDataURL(file);
+  });
+}
+
+const MAX_DOCS = 5;
+
 function formHtml(m) {
   const d = S.vf.data;
   const q = (label, body) => `<div class="f-label">${esc(label)}</div>${body}`;
@@ -614,30 +781,67 @@ function formHtml(m) {
       `<input type="tel" inputmode="tel" maxlength="16" placeholder="${esc(t("okPhoneHint"))}" value="${esc(d.phone || "")}"
         oninput="okhla.vtext('phone',this.value)" />`
     );
+  // One tap instead of typing ten digits in the sun: offer a number already
+  // recorded for someone else at this address.
+  const hhPhone = householdPhone(m);
+  const phoneBtn = () =>
+    hhPhone && d.phone !== hhPhone
+      ? ` <button type="button" class="link-btn" onclick="okhla.vtext('phone','${esc(hhPhone)}');okhla.vredraw()">${esc(
+          rep(t("okSamePhone"), { phone: esc(hhPhone) })
+        )}</button>`
+      : "";
+  const phoneQ2 = () =>
+    q(
+      t("okQPhoneOpt"),
+      `<input type="tel" inputmode="tel" maxlength="16" placeholder="${esc(t("okPhoneHint"))}" value="${esc(d.phone || "")}"
+        oninput="okhla.vtext('phone',this.value)" />${phoneBtn()}`
+    );
   let h = S.vf.restored ? `<div class="ok-hint">${esc(t("okRestored"))}</div>` : "";
   if (m.status === "ASDD") {
     h += q(t("okQCorrect"), radios("asdd_correct", ["yes", "no", "unable"], YN_KEY, d.asdd_correct));
     // "Yes" (marking is correct) or "unable to verify" ends the form; only "No" goes on to the follow-up questions
     if (d.asdd_correct === "no") {
       h += q(t("okQEnum"), radios("enum_form", ENUM_OPTS, ENUM_KEY, d.enum_form));
-      h += q(t("okQForm6"), radios("form6_submitted", YN, YN_KEY, d.form6_submitted));
-      if (d.form6_submitted === "no") {
-        h += q(t("okQAssist"), radios("needs_assistance", YN, YN_KEY, d.needs_assistance));
-        if (d.needs_assistance === "yes") {
-          h += guideHtml(m);
-          h += q(t("okQGiven"), radios("form6_given", YN, YN_KEY, d.form6_given));
-        }
-      }
-      h += phoneQ();
+      // The Form 6 questions were removed here on 2026-10-25: being wrongly on
+      // the ASD-D list is a different matter from enrolling afresh.
+      h += phoneQ2();
+      h += docsHtml(m);
     }
   } else if (m.status === "NOTICE") {
     h += q(t("okQNoticeRecv"), radios("notice_received", ["yes", "no", "unable"], YN_KEY, d.notice_received));
     // "Unable to verify" ends the form
     if (d.notice_received !== "unable") {
       h += q(t("okQHearing"), radios("hearing_status", ["completed", "due", "not_known"], HEARING_KEY, d.hearing_status));
-      h += q(t("okQDocs"), radios("docs_submitted", ["yes", "no", "unaware"], DOCS_KEY, d.docs_submitted));
-      h += phoneQ();
+      h += q(t("okQDocs"), radios("docs_submitted", DOCS_OPTS, DOCS_KEY, d.docs_submitted));
+      h += phoneQ2();
+      h += docsHtml(m);
     }
+  } else if (m.status === "CLEARED") {
+    // The voter survived the revision; the question is whether the entry is right.
+    h += q(t("okQCorrections"), checkboxes("cl_corrections", CORRECTION_OPTS, CORRECTION_KEY, d.cl_corrections));
+    const fixes = correctionList(d.cl_corrections);
+    if (fixes.length) {
+      h += q(t("okQForm8"), radios("cl_form8", YN, YN_KEY, d.cl_form8));
+      if (d.cl_form8 === "no") h += `<div class="ok-hint">${esc(t("okForm8Hint"))}</div>`;
+      h += phoneQ2();
+      h += docsHtml(m);
+    }
+  } else if (m.status === "NO_SIR") {
+    // Removed with no published reason — record what the elector can still prove.
+    h += q(t("okQHasId"), radios("ns_has_id", YN, YN_KEY, d.ns_has_id));
+    h += q(t("okQEpicText"), `<input type="text" maxlength="40" value="${esc(d.ns_epic_text || "")}"
+        oninput="okhla.vtext('ns_epic_text',this.value)" />`);
+    h += q(t("okQLastVoted"), `<input type="text" maxlength="120" placeholder="${esc(t("okLastVotedHint"))}"
+        value="${esc(d.ns_last_voted || "")}" oninput="okhla.vtext('ns_last_voted',this.value)" />`);
+    h += q(t("okQForm6Mode"), radios("form6_mode", FORM6_OPTS, FORM6_KEY, d.form6_mode));
+    if (d.form6_mode && d.form6_mode !== "no") {
+      h += q(t("okQAckNo"), `<input type="text" maxlength="60" value="${esc(d.ack_no || "")}"
+          oninput="okhla.vtext('ack_no',this.value)" />`);
+    } else if (d.form6_mode === "no") {
+      h += form6HelpHtml();
+    }
+    h += phoneQ2();
+    h += docsHtml(m);
   } else {
     h += q(t("okQDelStatus"), radios("del_status", ["wrongful", "valid"], DELSTAT_KEY, d.del_status));
     // "Valid deletion" ends the form; only "wrongful deletion" goes on to the follow-up questions
@@ -645,7 +849,8 @@ function formHtml(m) {
       h += q(t("okQDelAware"), radios("del_aware", YN, YN_KEY, d.del_aware));
       h += q(t("okQDelGot"), radios("del_got_form", YN, YN_KEY, d.del_got_form));
       if (d.del_got_form === "yes") h += q(t("okQDelSubmitted"), radios("del_submitted_form", YN, YN_KEY, d.del_submitted_form));
-      h += phoneQ();
+      h += phoneQ2();
+      h += docsHtml(m);
     }
   }
   h += q(t("okQRemarks"), `<textarea rows="3" oninput="okhla.vtext('remarks',this.value)">${esc(d.remarks || "")}</textarea>`);
@@ -869,11 +1074,13 @@ function progressHtml() {
     <table class="parts"><thead><tr><th>${esc(t("okPartWord"))}</th><th>${esc(t("okHousesTouched"))}</th><th>${esc(t("okElectorsCovered"))}</th><th>${esc(t("okLeft"))}</th><th>${esc(t("okKAsddWrong"))}</th></tr></thead><tbody>
       ${P.parts
         .map(
+          // data-label carries the column heading so each figure stays readable
+          // when the table collapses to one block per booth on a phone.
           (r) => `<tr><td><span class="drill-num" onclick="okhla.setProgPart('${esc(r.key)}')">${esc(r.label)}</span></td>
-            <td>${fmt(r.houses_touched)} / ${fmt(r.houses)}</td>
-            <td>${fmt(r.done)} / ${fmt(r.total)} <span class="muted">(${pct(r.done, r.total)}%)</span></td>
-            <td>${num(r.total - r.done, "electors_left", `,null,'${esc(r.key)}'`)}</td>
-            <td>${num(r.wrong, "asdd_wrong", `,null,'${esc(r.key)}'`)}</td></tr>`
+            <td data-label="${esc(t("okHousesTouched"))}">${fmt(r.houses_touched)} / ${fmt(r.houses)}</td>
+            <td data-label="${esc(t("okElectorsCovered"))}">${fmt(r.done)} / ${fmt(r.total)} <span class="muted">(${pct(r.done, r.total)}%)</span></td>
+            <td data-label="${esc(t("okLeft"))}">${num(r.total - r.done, "electors_left", `,null,'${esc(r.key)}'`)}</td>
+            <td data-label="${esc(t("okKAsddWrong"))}">${num(r.wrong, "asdd_wrong", `,null,'${esc(r.key)}'`)}</td></tr>`
         )
         .join("")}</tbody></table>`
     }`;
@@ -1067,11 +1274,14 @@ const handlers = {
     const v = m.verification;
     const data = {};
     for (const k of DATA_KEYS) data[k] = (v && v[k]) || "";
+    // Documents come back as a JSON string of R2 keys but are edited as an array.
+    data.docs = parseDocKeys(v && v.doc_keys);
     // an entry kept on this phone (waiting to send, or a draft that was never saved) comes back first
     const keep = lsGet(LS_PEND)[epic] || lsGet(LS_DRAFT)[epic];
     let restored = false;
     if (keep && keep.data && (!v || v._pending || keep.t > Date.parse(v.updated_at || 0))) {
       for (const k of DATA_KEYS) data[k] = keep.data[k] || "";
+      data.docs = Array.isArray(keep.data.docs) ? keep.data.docs : [];
       restored = true;
     }
     S.vf = { epic, error: "", saving: false, data, restored };
@@ -1093,6 +1303,9 @@ const handlers = {
     if (field === "notice_received" && value === "unable") {
       d.hearing_status = d.docs_submitted = d.phone = "";
     }
+    // the same rule for the two forms added 2026-10-25
+    if (field === "cl_form8" && !correctionList(d.cl_corrections).length) d.cl_form8 = "";
+    if (field === "form6_mode" && value === "no") d.ack_no = "";
     if (field === "form6_submitted" && value !== "no") {
       d.needs_assistance = "";
       d.form6_given = "";
@@ -1105,6 +1318,47 @@ const handlers = {
     const m = findMember(S.vf.epic);
     const box = document.getElementById("ok-vf-" + S.vf.epic);
     if (m && box) box.innerHTML = formHtml(m); // redraw only this form — keeps scroll and typed text
+  },
+  /** Multi-select: ticking "nothing to correct" clears the field list and vice versa. */
+  vtoggle(field, option) {
+    if (!S.vf) return;
+    const d = S.vf.data;
+    if (option === "none") {
+      d[field] = d[field] === "none" ? "" : "none";
+    } else {
+      const cur = new Set(correctionList(d[field]));
+      cur.has(option) ? cur.delete(option) : cur.add(option);
+      d[field] = [...cur].join(",");
+    }
+    if (field === "cl_corrections" && !correctionList(d.cl_corrections).length) d.cl_form8 = "";
+    this.vredraw();
+  },
+  /** Redraw just this form, so scroll position and typed text survive. */
+  vredraw() {
+    if (!S.vf) return;
+    const box = document.getElementById("ok-vf-" + S.vf.epic);
+    const m = findMember(S.vf.epic);
+    if (m && box) box.innerHTML = formHtml(m);
+  },
+  /** Attach a document. Images are shrunk here; a PDF is sent as-is and capped. */
+  async vdocadd(input) {
+    const file = input.files && input.files[0];
+    input.value = "";
+    if (!file || !S.vf) return;
+    const d = S.vf.data;
+    if (!Array.isArray(d.docs)) d.docs = [];
+    if (d.docs.length >= MAX_DOCS) return;
+    try {
+      d.docs.push(file.type === "application/pdf" ? await readAsDataUrl(file) : await shrinkImage(file));
+    } catch (e) {
+      S.vf.error = (e && e.message) || t("okDocFailed");
+    }
+    this.vredraw();
+  },
+  vdocdel(i) {
+    if (!S.vf || !Array.isArray(S.vf.data.docs)) return;
+    S.vf.data.docs.splice(i, 1);
+    this.vredraw();
   },
   vtext(field, value) {
     if (S.vf) {
@@ -1149,7 +1403,9 @@ const handlers = {
     const typedPhone = String(d.phone || "").trim();
     const phoneOk = /^\d{10}$/.test(typedPhone.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, ""));
     if (typedPhone && !phoneOk) return fail("okErrPhoneOpt");
-    const answered = DATA_KEYS.some((k) => k !== "wrong_reason" && String(d[k] || "").trim());
+    const answered =
+      DATA_KEYS.some((k) => k !== "wrong_reason" && String(d[k] || "").trim()) ||
+      (Array.isArray(d.docs) && d.docs.length > 0);
     if (!answered) return fail("okErrEmptyVisit");
     S.vf.saving = true;
     const box = document.getElementById("ok-vf-" + epic);
