@@ -654,7 +654,8 @@ app.post("/api/okhla/verify/:epic", async (c) => {
     return c.json({ detail: e.message || "Could not save" }, 400);
   }
 });
-app.get("/api/okhla/progress", async (c) => c.json(await okhlaProgress(c.env.DB, c.req.query("scope") || null)));
+app.get("/api/okhla/progress", async (c) =>
+  c.json(await okhlaProgress(c.env.DB, c.req.query("scope") || null, c.req.query("reason") || null)));
 app.get("/api/okhla/list", async (c) =>
   c.json(
     await okhlaList(c.env.DB, {
@@ -662,6 +663,7 @@ app.get("/api/okhla/list", async (c) =>
       scope: c.req.query("scope") || null,
       page: parseInt(c.req.query("page") ?? "0", 10) || 0,
       email: c.req.query("email") || null,
+      reason: c.req.query("reason") || null,
     })
   )
 );
