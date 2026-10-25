@@ -56,7 +56,7 @@ const S = {
   loading: false,
   error: "",
   block: "", // "" = every block; otherwise the block letter (K)
-  view: "hearing", // hearing (the opening tab) | search | progress | list
+  view: "search", // search (the opening tab) | progress | list | hearing | hearingdash
   prog: null, // /okhla/progress
   progScope: "", // "" = everything the dashboard covers; otherwise a scope key from the server ("65", "61-G")
   progAt: null,
@@ -307,6 +307,17 @@ const partCounts = () => {
   for (const r of S.meta.part_status) if (r.old_part === S.part) out[r.status] = r.n;
   return out;
 };
+/** 2025 part -> 2026 booth, from the parts table the server already sends. */
+function newPartOf(oldPart) {
+  const p = S.meta && S.meta.parts.find((x) => x.old_part === oldPart);
+  return p && p.new_parts ? p.new_parts : oldPart;
+}
+
+/** A part named in both schemes, for headings that must not be ambiguous. */
+function partLabelFor(oldPart) {
+  return `${t("okBoothWord")} ${newPartOf(oldPart)} (2026) · ${t("okPartWord")} ${oldPart} (2025)`;
+}
+
 const partInfo = (n) => (S.meta ? S.meta.parts.find((p) => p.old_part === n) : null);
 
 /* ------------------------------------------------------------- rendering */
@@ -364,8 +375,13 @@ function headlineHtml() {
 function tilesHtml() {
   if (!S.meta) return "";
   const c = partCounts();
-  const [lo, hi] = S.meta.audit_parts;
-  const scope = S.part ? `${t("okOldPart")} ${S.part}` : rep(t("okAuditScope"), { range: `${lo}–${hi}` });
+  // The heading must describe exactly what the figures below cover, which is the
+  // FOCUS booths — not the wider audited range. Naming both numbering schemes,
+  // because a surveyor holds 2026 paperwork while these are 2025 part numbers.
+  const focus = S.meta.focus_parts || [];
+  const scope = S.part
+    ? partLabelFor(S.part)
+    : rep(t("okFocusScope"), { booths: focus.map((pn) => newPartOf(pn)).join(", ") });
   return `
     <div class="ok-scope">${esc(scope)}</div>
     ${headlineHtml()}
@@ -1089,7 +1105,10 @@ function progressHtml() {
 function subnavHtml() {
   const tab = (v, label) =>
     `<button class="ok-subtab${v === "hearing" ? " ph" : ""}${S.view === v || (v === "progress" && S.view === "list") ? " on" : ""}" onclick="okhla.setView('${v}')">${esc(label)}</button>`;
-  return `<div class="ok-subnav">${tab("hearing", t("okTabHearing"))}${tab("hearingdash", t("okTabHearingDash"))}${tab("search", t("okTabSearch"))}${tab("progress", t("okTabProgress"))}</div>`;
+  // Search first, then Progress: those are the daily tools. The two Public
+  // Hearing tabs come last because a hearing happens occasionally, and having
+  // them first cost a surveyor a tap on every single lookup (owner, 2026-10-25).
+  return `<div class="ok-subnav">${tab("search", t("okTabSearch"))}${tab("progress", t("okTabProgress"))}${tab("hearing", t("okTabHearing"))}${tab("hearingdash", t("okTabHearingDash"))}</div>`;
 }
 
 function listHeaderHtml() {

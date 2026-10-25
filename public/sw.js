@@ -4,7 +4,7 @@
 // gets the current shell immediately (important right after we ship a fix),
 // and only falls back to the cached copy when the network fetch fails —
 // i.e. genuinely offline in the field.
-const CACHE = "sir-audit-hyd-v5";
+const CACHE = "sir-audit-hyd-v7";
 const SHELL = ["/", "/civic.css", "/js/store.js", "/js/api.js", "/js/app.js", "/js/worklist-configs.js", "/js/worklist-tab.js", "/js/asddo-list.js", "/js/draftsir-list.js", "/js/reverify-dashboard.js", "/js/search-all.js", "/js/ph-followup-tab.js", "/js/okhla-tab.js", "/js/okhla-offline.js", "/js/okhla-house.js", "/js/okhla-hearing.js", "/js/okhla-changes.js"];
 
 self.addEventListener("install", (event) => {

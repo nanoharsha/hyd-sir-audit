@@ -1,10 +1,10 @@
 /* Okhla offline copy.
-   The electors of the audit parts (old parts 59-69, ~17,000 people) and every saved visit are kept in this phone's
+   The electors of the whole audited part range (see hyd.config.json) and every saved visit are kept in this phone's
    IndexedDB, so the Okhla tab can search and open visit forms with no signal. A visit typed offline waits in the
    retry queue in okhla-tab.js and is sent by itself when the phone is back online.
 
    offlineSearch() mirrors okhlaSearch() in src/okhla.ts (browse / EPIC / house / name, same ordering, same grouping).
-   Change one, change the other. Not covered offline: EPIC lookup of electors outside parts 59-69. */
+   Change one, change the other. Not covered offline: electors outside the audited range. */
 import * as api from "./api.js";
 import { houseNorm } from "./okhla-house.js";
 
@@ -224,8 +224,13 @@ export async function syncElectors(meta, { force = false, onProgress } = {}) {
   if (!force && !stale) return false;
   syncing = true;
   try {
-    const parts = (meta && meta.parts ? meta.parts.map((x) => x.old_part) : []).sort((a, b) => a - b);
-    const list = parts.length ? parts : Array.from({ length: AUDIT_MAX - AUDIT_MIN + 1 }, (_, i) => AUDIT_MIN + i);
+    // The whole AUDITED range, not meta.parts. meta.parts lists only the booths
+    // being canvassed, because the dashboard counts those — but a surveyor who
+    // comes across a house just outside the focus must still find it with no
+    // signal. Caching the focus alone silently made those electors unsearchable
+    // in the field, which is the one place the cache actually matters.
+    const [lo, hi] = (meta && meta.audit_parts) || [AUDIT_MIN, AUDIT_MAX];
+    const list = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
     const all = [];
     let i = 0;
     for (const p of list) {

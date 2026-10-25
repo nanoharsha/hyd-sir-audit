@@ -32,6 +32,14 @@ export { AUDIT_MIN, AUDIT_MAX, FOCUS_PARTS };
 // carry the same tags — they just get no picker entry or status tile.
 const IN_AUDIT = `old_part BETWEEN ${AUDIT_MIN} AND ${AUDIT_MAX}`;
 
+// The DASHBOARD counts only the booths the team is canvassing. It used to count
+// the whole audited range, which put 3,150 electors and 1,312 ASD-D on screen
+// when the team works two booths holding 1,839 — a number nobody could act on,
+// and one that would be quoted as if it described the fieldwork (owner, 2026-10-25).
+// Everything outside the focus stays in the database and stays searchable; it is
+// only absent from these aggregates.
+const IN_FOCUS = `old_part IN (${FOCUS_PARTS.join(",")})`;
+
 const HH_ORDER = "ORDER BY p, s, n";
 const PAGE_SIZE = 25;
 const HOUSE_SAFETY_CAP = 6000; // a house search shows EVERY match; this only stops a runaway query
@@ -48,14 +56,14 @@ function placeholders(n: number): string {
 export async function okhlaMeta(db: D1Database) {
   const [parts, ps, meta, base, blocks] = await Promise.all([
     db
-      .prepare(`SELECT old_part, label, localities, new_parts, draft_available, electors FROM ok_parts WHERE ${IN_AUDIT} ORDER BY old_part`)
+      .prepare(`SELECT old_part, label, localities, new_parts, draft_available, electors FROM ok_parts WHERE ${IN_FOCUS} ORDER BY old_part`)
       .all(),
-    db.prepare(`SELECT old_part, status, n FROM ok_part_status WHERE ${IN_AUDIT}`).all(),
+    db.prepare(`SELECT old_part, status, n FROM ok_part_status WHERE ${IN_FOCUS}`).all(),
     db.prepare("SELECT key, value FROM ok_meta").all(),
     db
       .prepare(
         `SELECT old_part, roll_2025, struck_off_2025, monthly_added, monthly_deleted, draft_total, draft_added
-           FROM ok_part_base WHERE ${IN_AUDIT} ORDER BY old_part`
+           FROM ok_part_base WHERE ${IN_FOCUS} ORDER BY old_part`
       )
       .all(),
     // every block of every part: the block picker narrows a house search to one block (K-78, never G-78)
@@ -64,10 +72,11 @@ export async function okhlaMeta(db: D1Database) {
   const totals: Record<string, number> = {};
   for (const r of ps.results as any[]) totals[r.status] = (totals[r.status] || 0) + r.n;
   // CRITICAL part = BOTH of:
-  //   (ASDD + No SIR) as a share of the base roll total is above the 59-69 average, AND
-  //   Notices as a share of the Draft SIR total is above the 59-69 average.
-  // Averages are the pooled figures across 59-69. Recomputed on every load, so it
-  // follows the data (new draft parts, corrections) rather than a hard-coded list.
+  //   (ASDD + No SIR) as a share of the base roll total is above average, AND
+  //   Notices as a share of the Draft SIR total is above average.
+  // Averages are pooled across the FOCUS booths and recomputed on every load, so
+  // they follow the data rather than a hard-coded list. No longer surfaced in the
+  // picker (the Critical/Other grouping was removed), but still returned.
   const per = new Map<number, any>();
   for (const r of ps.results as any[]) {
     const x = per.get(r.old_part) || { asdd: 0, nosir: 0, notice: 0 };
@@ -94,6 +103,8 @@ export async function okhlaMeta(db: D1Database) {
 
   return {
     audit_parts: [AUDIT_MIN, AUDIT_MAX],
+    // What the figures below actually cover. The client labels the dashboard with
+    // this, so the heading can never claim a wider scope than the numbers.
     focus_parts: FOCUS_PARTS,
     critical,
     critical_manual: CRITICAL_MANUAL,
