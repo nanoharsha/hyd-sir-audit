@@ -8,7 +8,20 @@ const IMAGE_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
+// PDFs are accepted but never required. A surveyor photographs each document —
+// one tap, and the browser compresses it to a few hundred KB before it is queued.
+// Asking them to combine documents into a PDF at the doorstep means leaving the
+// app for a scanner app and finding the file again, and the result is BIGGER:
+// a phone-scanned multi-page PDF is typically several MB and cannot be
+// compressed client-side, so it sits whole in the offline outbox. The PDF path
+// exists for a document the elector already has as one, such as a downloaded
+// acknowledgement.
+const DOC_EXT: Record<string, string> = { ...IMAGE_EXT, "application/pdf": "pdf" };
+
 const MAX_UPLOAD_BYTES = 6 * 1024 * 1024;
+// A PDF arrives uncompressed, so it gets a tighter cap than a photo the client
+// has already shrunk. Rejecting loudly beats a silent failure in the field.
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -29,13 +42,20 @@ export async function savePhoto(
   recordId: number,
   dataUrl: string,
   prefix = "",
-  slot = ""
+  slot = "",
+  allowPdf = false
 ): Promise<string> {
   const match = dataUrl.match(/^data:([\w/+.-]+);base64,([\s\S]*)$/);
   if (!match) throw new Error("Photo must be a base64 data URL");
   const mime = match[1].toLowerCase();
-  const ext = IMAGE_EXT[mime];
-  if (!ext) throw new Error("Photo must be a JPEG, PNG or WebP image");
+  const ext = allowPdf ? DOC_EXT[mime] : IMAGE_EXT[mime];
+  if (!ext) {
+    throw new Error(
+      allowPdf
+        ? "A document must be a JPEG, PNG or WebP image, or a PDF"
+        : "Photo must be a JPEG, PNG or WebP image"
+    );
+  }
 
   let bytes: Uint8Array;
   try {
@@ -43,7 +63,14 @@ export async function savePhoto(
   } catch {
     throw new Error("Photo data is not valid base64");
   }
-  if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error("Photo is too large");
+  const cap = mime === "application/pdf" ? MAX_PDF_BYTES : MAX_UPLOAD_BYTES;
+  if (bytes.byteLength > cap) {
+    throw new Error(
+      mime === "application/pdf"
+        ? "That PDF is too large. Photograph the pages instead — the app shrinks photos for you."
+        : "Photo is too large"
+    );
+  }
 
   const slotSeg = slot && /^[a-z]+$/.test(slot) ? `${slot}/` : "";
   const key = `${prefix}${recordId}/${slotSeg}${crypto.randomUUID()}.${ext}`;
@@ -51,12 +78,46 @@ export async function savePhoto(
   return key;
 }
 
+/**
+ * Save the documents attached to one verification form and return their R2 keys.
+ * Anything already stored (a plain key rather than a data: URL) is passed
+ * through untouched, so re-saving a form does not duplicate its uploads.
+ */
+export async function saveFormDocs(
+  bucket: R2Bucket,
+  voterKey: string,
+  docs: string[],
+  max: number
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const d of docs.slice(0, max)) {
+    if (!d.startsWith("data:")) {
+      out.push(d); // already uploaded on an earlier save
+      continue;
+    }
+    out.push(await savePhotoForKey(bucket, voterKey, d));
+  }
+  return out;
+}
+
+// Verification documents are keyed by the elector's EPIC, not a row id: the
+// ok_* register can be rebuilt (ids shift when more data loads) but the EPIC
+// does not, so a stored document survives a reload.
+async function savePhotoForKey(bucket: R2Bucket, voterKey: string, dataUrl: string): Promise<string> {
+  const safe = voterKey.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!safe) throw new Error("Missing EPIC for the document");
+  return savePhoto(bucket, 0, dataUrl, `verify/${safe}/`, "", true);
+}
+
 export async function fetchPhoto(bucket: R2Bucket, key: string): Promise<R2ObjectBody | null> {
   // A stored key is "<id>/<uuid>.<ext>" (electors) or, for the reverification
   // rounds, "asddo/<id>/<uuid>.<ext>" / "draftsir/<id>/<slot>/<uuid>.<ext>"
   // (slot = outcome|sir|voted|moved|jan), or "ph/<id>/<uuid>.<ext>" for a
-  // Public Hearing follow-up photo. Refuse anything else so this can't read
-  // arbitrary keys.
-  if (!/^(asddo\/|draftsir\/|ph\/)?\d+\/([a-z]+\/)?[a-f0-9-]+\.(jpg|png|webp)$/.test(key)) return null;
+  // Public Hearing follow-up photo. Verification documents add a fourth shape,
+  // "verify/<EPIC>/0/<uuid>.<ext>", and are the only ones that may be a PDF.
+  // Refuse anything else so this can't read arbitrary keys.
+  const legacy = /^(asddo\/|draftsir\/|ph\/)?\d+\/([a-z]+\/)?[a-f0-9-]+\.(jpg|png|webp)$/;
+  const verifyDoc = /^verify\/[A-Z0-9]+\/\d+\/[a-f0-9-]+\.(jpg|png|webp|pdf)$/;
+  if (!legacy.test(key) && !verifyDoc.test(key)) return null;
   return bucket.get(key);
 }

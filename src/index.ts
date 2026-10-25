@@ -649,7 +649,7 @@ app.get("/api/okhla/offline/visits", async (c) => c.json(await okhlaOfflineVisit
 app.post("/api/okhla/verify/:epic", async (c) => {
   const user = await currentUser(c);
   try {
-    return c.json(await saveVerification(c.env.DB, c.req.param("epic"), await c.req.json(), user));
+    return c.json(await saveVerification(c.env.DB, c.req.param("epic"), await c.req.json(), user, c.env.UPLOADS));
   } catch (e: any) {
     return c.json({ detail: e.message || "Could not save" }, 400);
   }

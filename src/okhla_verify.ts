@@ -13,6 +13,7 @@
 // a follow-up answer that no longer applies is cleared (same rule as
 // src/ph_followup.ts), so flipping an earlier answer never leaves a stale one.
 import { CurrentUser, utcnow } from "./records";
+import { saveFormDocs } from "./uploads";
 
 export const ASDD_CORRECT = ["yes", "no", "unable"];
 // Reworded by the field team (2026-10-25). "Was the enumeration form submitted?"
@@ -214,9 +215,21 @@ export async function attachVerifications(db: D1Database, households: any[]) {
 
 const normEpic = (e: string) => (e || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-export async function saveVerification(db: D1Database, epicRaw: string, p: VerifyPayload, user: CurrentUser) {
+export async function saveVerification(
+  db: D1Database,
+  epicRaw: string,
+  p: VerifyPayload,
+  user: CurrentUser,
+  bucket?: R2Bucket
+) {
   const key = normEpic(epicRaw);
   if (!key) throw new Error("Missing EPIC");
+  // Documents travel inside the queued operation as data: URLs, exactly like the
+  // existing photo fields, so a form captured with no signal syncs whole later.
+  // Store them first and keep only the R2 keys on the row.
+  if (bucket && Array.isArray(p.docs) && p.docs.length) {
+    p = { ...p, docs: await saveFormDocs(bucket, key, p.docs, MAX_DOCS) };
+  }
   // The form is decided by the elector's current tag, not by anything the client sends.
   const el: any = await db
     .prepare(
